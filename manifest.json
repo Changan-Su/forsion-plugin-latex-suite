@@ -1,0 +1,41 @@
+{
+  "id": "latex-suite",
+  "name": "LaTeX 套件",
+  "nameEn": "LaTeX Suite",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "minAppVersion": "2.8.0",
+  "main": "main.js",
+  "description": "把敲 LaTeX 公式变得和手写一样快。**片段展开**:在公式里打 `@a` 立刻成 `\\alpha`、`//` 成分式、`sr` 成平方 —— 上千条打磨过的默认触发串开箱即用,也可以整份换成自己的。**占位跳转**:展开后按 Tab 在 `\\frac{}{}`、`\\begin{}\\end{}` 的空位之间跳,同名占位点自动联动(改一处环境名两头一起变)。**Tabout**:公式里按 Tab 直接跳出括号或跳出 `$`,不用去够方向键。**矩阵快捷**:在 matrix/cases/align 里 Tab 分列、回车换行。**实时符号**:光标不在那一段时 `\\alpha` 显示成 α、`\\frac{a}{b}` 显示成分式,光标一进就露出源码可编辑。**自动放大括号**:公式里出现 `\\sum` 之类的高结构时把括号换成 `\\left( \\right)`。设置界面自带一个真代码编辑器改片段库,片段也可以放在笔记库的文件/文件夹里由外部编辑器维护、存盘即热重载。全部离线,公式在磁盘上始终是标准 markdown 的 `$…$`,不改任何落盘格式。移植自 Obsidian 的 obsidian-latex-suite(MIT, artisticat1)。",
+  "descriptionEn": "Make typesetting LaTeX math as fast as handwriting. **Snippets**: type `@a` inside math and get `\\alpha`, `//` for fractions, `sr` for squares — a thousand battle-tested triggers out of the box, or swap in your own. **Tabstops**: after expanding, Tab between the empty slots in `\\frac{}{}` and `\\begin{}\\end{}`; repeated slots stay mirrored (rename the environment once, both ends follow). **Tabout**: Tab jumps straight out of brackets or out of `$`. **Matrix shortcuts**: Tab for columns, Enter for rows inside matrix/cases/align. **Conceal**: `\\alpha` renders as α while the cursor is elsewhere and reveals the source the moment you move in. **Auto-enlarge brackets** around tall structures. The settings page ships a real code editor for your snippet library, and snippets can live in a vault file or folder that hot-reloads on save. Fully offline; on disk your math stays plain markdown `$…$` — no format changes. Ported from Obsidian's obsidian-latex-suite (MIT, artisticat1).",
+  "onboarding": {
+    "intro": "在公式里打字就会自动展开 —— 先随便找一篇笔记,打一个 $ 进入行内公式试试。",
+    "steps": [
+      {
+        "title": "先进公式",
+        "description": "片段只在公式里生效。打 `$` 开一段行内公式,或者用 `dm` 展开出块级公式。判断依据和笔记里公式的渲染完全一致 —— 看得到公式,片段就会工作。"
+      },
+      {
+        "title": "希腊字母与常用符号",
+        "description": "`@a` → α，`@b` → β，`@t` → θ；`sr` → 平方，`cb` → 立方，`inv` → 上标 -1。默认表里有上千条，设置页可以全部翻阅。"
+      },
+      {
+        "title": "分式与根号",
+        "description": "`//` 把前面那一项变成分式；`(a+b)/` 会把整个括号吃进分子。`sq` 出根号。展开后按 Tab 在空位之间跳。"
+      },
+      {
+        "title": "Tab 的四重身份",
+        "description": "有占位点时跳占位点；没有时展开手动片段；在矩阵里分列；都不是就跳出括号。四样都不适用时 Tab 原样交还给笔记（列表缩进照常）。"
+      },
+      {
+        "title": "实时符号（conceal）",
+        "description": "光标离开一段公式后，`\\alpha` 会直接显示成 α、上下标会缩上去。想改回源码，把光标移进那一段即可。不喜欢可以在设置里关掉。"
+      },
+      {
+        "title": "换成自己的片段库",
+        "description": "设置 → LaTeX 套件 → 片段，里面是一个真代码编辑器。也可以把片段放进笔记库的一个 .js 文件或文件夹，用你惯用的编辑器维护，存盘即生效。从 Obsidian 那边的 snippets.js 可以整份贴过来。"
+      }
+    ],
+    "settings": true
+  }
+}
