@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="title">
+  <title id="title">LaTeX Suite — Integral flow</title>
+  <!-- Original Forsion plugin identity artwork, 2026-10-05. -->
+  <defs><linearGradient id="tile" x1="28" y1="12" x2="222" y2="252" gradientUnits="userSpaceOnUse"><stop stop-color="#4d405b"/><stop offset="1" stop-color="#2d2638"/></linearGradient></defs>
+  <rect x="4" y="4" width="248" height="248" rx="58" fill="url(#tile)"/>
+  <g style="--ink:#f2e8db;--accent:#bfa5d4;--cut:#2d2638" fill="none" stroke="var(--ink)" stroke-width="13" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M158 59Q131 42 119 65Q113 79 113 111L112 154Q111 180 100 191Q89 201 73 192" stroke-width="18"/>
+    <path d="M153 109h40" stroke="var(--accent)" stroke-width="11"/>
+    <path d="M173 88v5m0 31v7" stroke="var(--accent)" stroke-width="10"/>
+    <path d="M137 181h57" stroke-width="10"/>
+  </g>
+</svg>
