@@ -18,6 +18,8 @@ import { DEFAULT_SNIPPET_VARIABLES } from '../snippets/variables'
 export interface LatexSuiteSettings {
   // ── 片段
   snippetsEnabled: boolean
+  /** 正文中的自动片段须显式开启；手动触发不受此开关影响。 */
+  proseSnippetsEnabled: boolean
   /** 手动片段(无 `A` 标志)的触发键。上游是自由文本的 CodeMirror keymap 串,这里收成两档:
    *  Amadeus 的按键拦截走宿主 keymap,允许任意组合等于允许用户把自己锁死。 */
   snippetsTrigger: 'Tab' | 'Space'
@@ -101,6 +103,7 @@ const SNIPPET_KEYS: (keyof RawSnippet)[] = [
   'flags',
   'triggerAfter',
   'excludedEnvironments',
+  'excludedMacros',
 ]
 
 /**
@@ -129,6 +132,7 @@ export function serializeRawSnippets(snippets: RawSnippet[]): string {
 
 export const DEFAULT_SETTINGS: LatexSuiteSettings = {
   snippetsEnabled: true,
+  proseSnippetsEnabled: false,
   snippetsTrigger: 'Tab',
   snippetsSource: 'user',
   snippetsFile: '',
@@ -158,7 +162,7 @@ export const DEFAULT_SETTINGS: LatexSuiteSettings = {
 
   concealEnabled: false,
   concealRevealTimeout: 0,
-  mathPreviewEnabled: true,
+  mathPreviewEnabled: false,
   highlightBracketsEnabled: true,
   colorPairedBracketsEnabled: true,
 
@@ -197,6 +201,20 @@ export function mergeSettings(raw: unknown): LatexSuiteSettings {
     ;(out as unknown as Record<string, unknown>)[key] = value
   }
   return out
+}
+
+/** 只修复逐字匹配的旧版默认文本；用户编辑过的片段库绝不猜测或覆盖。 */
+export function restoreLegacyDefaultSnippets(source: string): string {
+  const legacy = DEFAULT_SNIPPETS.map(({ excludedMacros: _excluded, ...snippet }) => snippet)
+  const oldSerialized = serializeRawSnippets(legacy)
+  const oldReset = `[\n${legacy.map((s) => {
+    const parts = [`trigger: ${jsValue(s.trigger)}`, `replacement: ${jsValue(s.replacement)}`]
+    if (s.options) parts.push(`options: ${JSON.stringify(s.options)}`)
+    if (s.priority) parts.push(`priority: ${s.priority}`)
+    if (s.description) parts.push(`description: ${JSON.stringify(s.description)}`)
+    return `  {${parts.join(', ')}}`
+  }).join(',\n')}\n]\n`
+  return source === oldSerialized || source === oldReset ? DEFAULT_SETTINGS.snippetsSourceText : source
 }
 
 /** `"sum, int, frac"` → `['sum', 'int', 'frac']`(上游 strToArray:先去掉**全部**空白再切)。 */

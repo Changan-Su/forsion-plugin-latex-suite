@@ -11,7 +11,7 @@
 import type { EditorState } from 'prosemirror-state'
 import type { EditorView } from 'prosemirror-view'
 import type { BlockText } from '../editor/text'
-import { blockTextAt, inInlineCode, isCodeBlock, textSelectionAt } from '../editor/text'
+import { blockTextAt, isCodeBlock, mathBlockString, protectedRange, textSelectionAt } from '../editor/text'
 import type { MathContext, MathSpan } from '../editor/mathMode'
 import { mathContext, mathSpanAt, scanMath } from '../editor/mathMode'
 
@@ -36,17 +36,18 @@ export function mathCursorAt(state: EditorState): MathCursor | null {
   if (!bt) return null
   // 代码块 / 行内代码里用户在写字面量,`\frac` 就是要那五个字 —— 与片段引擎同一条闸。
   if (isCodeBlock(bt.node)) return null
-  if (inInlineCode(bt.text, bt.from)) return null
+  if (protectedRange(bt)) return null
   const pos = bt.to
-  const ctx = mathContext(bt.text, pos, { inCodeBlock: false })
-  if (!ctx.span) return null
+  const contextText = mathBlockString(bt.node)
+  const ctx = mathContext(contextText, pos, { inCodeBlock: false })
+  if (!ctx.span || bt.from < ctx.span.innerFrom || bt.to > ctx.span.innerTo) return null
   return {
     bt,
     ctx,
     pos,
     innerFrom: ctx.span.innerFrom,
     innerTo: ctx.span.innerTo,
-    closed: mathSpanAt(scanMath(bt.text), pos),
+    closed: mathSpanAt(scanMath(contextText, true), pos),
   }
 }
 

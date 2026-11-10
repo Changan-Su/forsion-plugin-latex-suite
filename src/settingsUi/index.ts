@@ -12,6 +12,9 @@
 //  3. 上游的文件路径框带 FileSuggest 自动补全(要 Obsidian 的 vault 索引)。这里退化成纯文本框,
 //     宿主 `app.listFiles?.()` 是异步且不保证存在的接缝,补全交给以后。
 
+import { mountGuide } from './guide'
+import type { PluginContext } from '../../types/forsion'
+import type { Snippet } from '../snippets/model'
 import { SETTINGS_CSS } from './css'
 import { createT, type StringKey } from './i18n'
 import type { LatexSuiteSettings } from './model'
@@ -23,6 +26,15 @@ export type { LatexSuiteSettings } from './model'
 
 /** 面板向宿主要的全部东西。主入口负责实现 —— 面板不碰 ctx,也就不需要知道设置存在哪、怎么落盘。 */
 export interface SettingsUiApi {
+  reload?(): Promise<void>
+  watchMode?(): 'live' | 'existing-files' | 'manual'
+  snippets?(): Snippet[]
+  paused?(): boolean
+  togglePause?(): void
+  practiceDraft?(): string
+  setPracticeDraft?(text: string): void
+  mountPractice?: NonNullable<PluginContext['ui']>['mountMarkdownEditor']
+  runPracticeCommand?(el: HTMLElement, id: string): void
   get(): LatexSuiteSettings
   /** 增量写。主入口应就地合并 + 落盘 + 让引擎重新读设置。 */
   set(patch: Partial<LatexSuiteSettings>): void
@@ -456,6 +468,7 @@ function render(host: HTMLElement, api: SettingsUiApi, opts: RenderOpts): () => 
 
   // ── 片段页
   const snippetsPane = addTab('tab.snippets')
+  addRow(snippetsPane, { label: 'snippets.prose.label', desc: 'snippets.prose.desc', control: toggle('proseSnippetsEnabled') })
   addRow(snippetsPane, { label: 'snippets.enabled.label', desc: 'snippets.enabled.desc', control: toggle('snippetsEnabled') })
   addRow(snippetsPane, {
     label: 'snippets.trigger.label',
@@ -611,12 +624,6 @@ function render(host: HTMLElement, api: SettingsUiApi, opts: RenderOpts): () => 
   // ── 显示页
   const displayPane = addTab('tab.display')
   addRow(displayPane, { label: 'disp.conceal.label', desc: 'disp.conceal.desc', control: toggle('concealEnabled') })
-  addRow(displayPane, {
-    label: 'disp.concealDelay.label',
-    desc: 'disp.concealDelay.desc',
-    control: numberInput('concealRevealTimeout'),
-    visible: () => s().concealEnabled,
-  })
   addRow(displayPane, { label: 'disp.preview.label', desc: 'disp.preview.desc', control: toggle('mathPreviewEnabled') })
   addRow(displayPane, { label: 'disp.highlight.label', desc: 'disp.highlight.desc', control: toggle('highlightBracketsEnabled') })
   addRow(displayPane, { label: 'disp.color.label', desc: 'disp.color.desc', control: toggle('colorPairedBracketsEnabled') })
@@ -653,6 +660,10 @@ function render(host: HTMLElement, api: SettingsUiApi, opts: RenderOpts): () => 
   })
   addRow(advancedPane, { label: 'adv.recursion.label', desc: 'adv.recursion.desc', control: numberInput('snippetRecursion') })
 
+  advancedPane.append(h('p', 'ls-note', t('adv.compatibility')))
+  const guidePane = addTab('tab.guide')
+  const stopGuide = mountGuide(guidePane, api)
+
   syncAll()
   refreshErrors()
   activate(Math.min(Math.max(0, opts.initialTab), panes.length - 1))
@@ -686,6 +697,7 @@ function render(host: HTMLElement, api: SettingsUiApi, opts: RenderOpts): () => 
   })
 
   return () => {
+    stopGuide()
     offExternal?.()
     cancelAnimationFrame(raf)
     // 顺序有讲究:先把还没到点的输入结算掉(用户改完直接关页面的那 300ms),再拆 CM6。

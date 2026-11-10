@@ -263,4 +263,23 @@ export const SETTINGS_CSS = `
 /* 打字中:还没到落盘那一刻,状态先褪色,别让用户以为「已保存」是刚才那一下的结果。 */
 .ls-cm-status.is-pending { opacity: 0.45; }
 .ls-cm-actions { display: flex; gap: 6px; }
+
+.ls-guide-steps { padding-inline-start: 22px; }
+.ls-guide-steps li { margin-block: 6px; }
+.ls-guide-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-block: 12px; }
+.ls-practice { min-height: 160px; padding: 12px; border: 1px solid var(--ls-border); border-radius: var(--radius-sm); }
+.ls-practice-source { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono); max-height: 200px; overflow: auto; }
+.ls-reference { margin-top: 12px; }
+.ls-reference details { border-bottom: 1px solid var(--ls-border); padding-block: 8px; }
+.ls-reference summary { cursor: pointer; font-size: var(--ui-font-body, 13px); }
+.ls-reference-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 4px 12px; padding-block: 8px; }
+.ls-reference-row code { overflow-wrap: anywhere; white-space: pre-wrap; font-family: var(--font-mono); }
+.ls-reference-row small { grid-column: 1 / -1; color: var(--ls-muted); font-size: var(--ui-font-meta, 12px); }
+.ls-bracket-0 { color: var(--accent-ink); }
+.ls-bracket-1 { color: var(--green); }
+.ls-bracket-2 { color: var(--warning); }
+.ls-bracket-3 { color: var(--signal); }
+.ls-bracket-active { outline: 1px solid currentColor; border-radius: 2px; }
+.ls-math-preview { padding: 8px; overflow: auto; color: var(--text); background: var(--bg-card); }
+@media (max-width: 480px) { .ls-reference-row { grid-template-columns: minmax(0, 1fr); } }
 `

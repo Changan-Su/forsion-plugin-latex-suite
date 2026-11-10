@@ -11,8 +11,8 @@ import katex from 'katex'
 import type { EditorState, Plugin } from 'prosemirror-state'
 import type { EditorView } from 'prosemirror-view'
 import type { PmToolkit } from '../../types/forsion'
-import { blockTextAt } from './text'
-import { mathSpanAt, scanMath } from './mathMode'
+import { mathCursorAt } from '../features/shared'
+
 
 export interface PreviewOptions {
   enabled: () => boolean
@@ -25,12 +25,10 @@ interface Shown {
 
 /** 取光标所在公式的正文;不在公式里 → null。 */
 function latexAtCursor(state: EditorState): Shown | null {
-  const bt = blockTextAt(state)
-  if (!bt) return null
-  const span = mathSpanAt(scanMath(bt.text), bt.from)
-  if (!span) return null
-  const latex = bt.text.slice(span.innerFrom, span.innerTo).trim()
-  return latex ? { latex, display: span.display } : null
+  const m = mathCursorAt(state)
+  if (!m?.closed) return null
+  const latex = m.bt.text.slice(m.innerFrom, m.innerTo).trim()
+  return latex ? { latex, display: m.closed.display } : null
 }
 
 export function mathPreviewPlugins(pm: PmToolkit, opts: PreviewOptions): Plugin[] {
@@ -49,12 +47,13 @@ export function mathPreviewPlugins(pm: PmToolkit, opts: PreviewOptions): Plugin[
         }
 
         const render = (): void => {
-          if (!opts.enabled() || !view.hasFocus()) return hide()
+          const native = view.state.plugins.some((p) => String((p as unknown as { key: string }).key).startsWith('amadeus-math-live-preview$'))
+          if (native || !opts.enabled() || !view.hasFocus()) return hide()
           const hit = latexAtCursor(view.state)
           if (!hit) return hide()
 
-          if (hit.latex !== last) {
-            last = hit.latex
+          if (`${hit.display}:${hit.latex}` !== last) {
+            last = `${hit.display}:${hit.latex}`
             try {
               el.innerHTML = katex.renderToString(hit.latex, {
                 displayMode: hit.display,
@@ -66,14 +65,8 @@ export function mathPreviewPlugins(pm: PmToolkit, opts: PreviewOptions): Plugin[
               return hide()
             }
           }
-          if (!el.isConnected) document.body.appendChild(el)
-
-          // 贴着光标上方;顶不下就翻到下方。用视口坐标(元素是 position: fixed)。
-          const coords = view.coordsAtPos(view.state.selection.from)
-          const box = el.getBoundingClientRect()
-          const above = coords.top - box.height - 8
-          el.style.left = `${Math.max(8, Math.min(coords.left, window.innerWidth - box.width - 8))}px`
-          el.style.top = `${above < 8 ? coords.bottom + 8 : above}px`
+          // Legacy hosts only: a preview below the editor avoids viewport/zoom coordinate drift.
+          if (!el.isConnected) view.dom.parentElement?.appendChild(el)
         }
 
         // ⚠️失焦必须自己挂 DOM 监听:插件的 update() 只在**状态变化**时跑,而失焦不产生事务 ——

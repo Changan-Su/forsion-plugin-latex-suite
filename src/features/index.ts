@@ -14,7 +14,7 @@
 //     这里不在 autoFraction 内部串,免得绕过设置开关;接线层自己接一句即可:
 //     `if (autoFraction(...)) { if (s.autoEnlargeBrackets) autoEnlargeBrackets(view, {...}); return true }`
 //   - **taboutByCloseBracket**:括号「打穿」(光标右边已有 `)` 时再打 `)` 就跳过去)。
-//     **目前没接线** —— 需要在 handleTextInput 里加一句
+//     由 main.ts 的 handleTextInput 接线：
 //     `if (s.taboutEnabled && taboutByCloseBracket(view, text, {...})) return true`。
 //   - 这些函数会经 editor/text.ts 的 textSelectionAt 造选区 —— 接线时**必须先调过
 //     `setTextSelectionCtor(pm.TextSelection)`**,否则第一次按 Tab 就抛。
@@ -31,7 +31,7 @@ export type { TaboutOptions } from './tabout'
 export { autoFraction, DEFAULT_BREAKING_CHARS, DEFAULT_AUTOFRACTION_EXCLUDED_ENVS } from './autoFraction'
 export type { AutoFractionOptions } from './autoFraction'
 
-export { matrixShortcut, DEFAULT_MATRIX_ENVS, DEFAULT_MATRIX_MACROS } from './matrixShortcuts'
+export { matrixShortcut, exitMatrix, DEFAULT_MATRIX_ENVS, DEFAULT_MATRIX_MACROS } from './matrixShortcuts'
 export type { MatrixOptions } from './matrixShortcuts'
 
 export { autoEnlargeBrackets, DEFAULT_ENLARGE_TRIGGERS } from './autoEnlargeBrackets'

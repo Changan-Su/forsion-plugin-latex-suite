@@ -31,6 +31,7 @@ export function blockString(node: PmNode): string {
   let out = ''
   node.forEach((child) => {
     if (child.isText) out += child.text ?? ''
+    else if (['hardbreak', 'hard_break', 'break'].includes(child.type.name)) out += '\n'.repeat(child.nodeSize)
     else out += ATOM.repeat(child.nodeSize)
   })
   return out
@@ -38,6 +39,7 @@ export function blockString(node: PmNode): string {
 
 /** 取当前选区所在 textblock 的文本视图;选区跨块或不在 textblock 里 → null(片段一律不介入)。 */
 export function blockTextAt(state: EditorState): BlockText | null {
+  if (state.storedMarks?.some((m) => ['code', 'inlineCode', 'amadeusEscaped'].includes(m.type.name))) return null
   const { $from, $to } = state.selection
   if (!$from.parent.isTextblock) return null
   if ($from.sameParent($to) === false) return null
@@ -55,11 +57,41 @@ export function isCodeBlock(node: PmNode): boolean {
   return node.type.spec.code === true || node.type.name === 'code_block'
 }
 
-/** 光标是否落在**行内代码**里(单块内 `` ` `` 配对计数)。落在里面就不跑片段 —— 用户在写字面量。 */
+/** Literal code in raw-source test adapters. Production also checks ProseMirror marks. */
 export function inInlineCode(text: string, pos: number): boolean {
-  let ticks = 0
-  for (let i = 0; i < pos && i < text.length; i++) if (text[i] === '`') ticks++
-  return ticks % 2 === 1
+  const re = /(`+)([\s\S]*?)\1/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text))) if (pos > m.index && pos < m.index + m[0].length) return true
+  return false
+}
+
+/** Position-preserving context shared by snippets, commands and decorations. */
+export function mathBlockString(node: PmNode): string {
+  let out = ''
+  node.forEach((child) => {
+    if (child.isText) {
+      const text = child.text ?? ''
+      const marks = child.marks ?? []
+      if (marks.some((m) => m.type.name === 'code' || m.type.name === 'inlineCode')) out += ' '.repeat(text.length)
+      else if (marks.some((m) => m.type.name === 'amadeusEscaped')) out += text.replace(/\$/g, '\u0002')
+      else out += text
+    } else if (['hardbreak', 'hard_break', 'break'].includes(child.type.name)) out += '\n'.repeat(child.nodeSize)
+    else out += ATOM.repeat(child.nodeSize)
+  })
+  // Source-mode adapters can retain literal backticks; preserve their offsets too.
+  return out.replace(/(`+)([\s\S]*?)\1/g, (code) => ' '.repeat(code.length))
+}
+
+/** Block edits must not replace code marks, escaped literals or inline atoms. */
+export function protectedRange(bt: BlockText, from = bt.from, to = bt.to): boolean {
+  let blocked = false
+  bt.node.forEach((child, offset) => {
+    const size = child.nodeSize ?? child.text?.length ?? 0
+    const touches = from === to ? offset < from && offset + size > from : offset < to && offset + size > from
+    if (touches && (!child.isText || child.marks?.some((m) => ['code', 'inlineCode', 'amadeusEscaped'].includes(m.type.name)))) blocked = true
+  })
+  const marks = bt.node.resolve?.(from).marks() ?? []
+  return blocked || marks.some((m) => ['code', 'inlineCode', 'amadeusEscaped'].includes(m.type.name)) || inInlineCode(bt.text, from)
 }
 
 /** 在 textblock 内做一次替换,并把光标放到 caret(text 偏移)。返回事务,由调用方 dispatch。 */

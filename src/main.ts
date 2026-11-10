@@ -20,7 +20,7 @@ import { createEngine } from './editor/expand'
 import { bracketPlugins } from './editor/brackets'
 import { mathPreviewPlugins } from './editor/mathPreview'
 import { concealPlugins, CONCEAL_CSS } from './conceal/conceal'
-import { autoEnlargeBrackets, autoFraction, matrixShortcut, tabout, taboutByCloseBracket, EDITOR_COMMANDS } from './features'
+import { autoEnlargeBrackets, autoFraction, matrixShortcut, exitMatrix, tabout, taboutByCloseBracket, EDITOR_COMMANDS } from './features'
 import { mountSettings, SETTINGS_CSS } from './settingsUi'
 import { splitList } from './settingsUi/model'
 
@@ -41,11 +41,11 @@ const STYLE_ID = 'latex-suite-styles'
 
 const BASE_CSS = `
 .latex-suite-tabstop {
-  background: color-mix(in srgb, var(--interactive-accent, #6b8afd) 18%, transparent);
+  background: color-mix(in srgb, var(--accent-ink) 18%, transparent);
   border-radius: 2px;
 }
 .latex-suite-tabstop-active {
-  background: color-mix(in srgb, var(--interactive-accent, #6b8afd) 34%, transparent);
+  background: color-mix(in srgb, var(--accent-ink) 34%, transparent);
 }
 `
 
@@ -74,7 +74,18 @@ export function setup(ctx: PluginContext): () => void {
   }
 
   const store = createStore(ctx)
-  const removeStyle = injectStyle(BASE_CSS + CONCEAL_CSS + SETTINGS_CSS)
+  let autoPaused = false
+  let practiceDraft = '$x$\n\n$$ \\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix} $$'
+  const views = new Map<EditorView, () => boolean>()
+  const listeners = new Set<() => void>()
+  const refresh = (): void => {
+    for (const view of views.keys()) if (!view.isDestroyed) view.dispatch(view.state.tr.setMeta('latex-suite-settings', true))
+    for (const cb of listeners) cb()
+  }
+  const offStore = store.subscribe(refresh)
+  const togglePause = (): void => { autoPaused = !autoPaused; refresh() }
+
+  const removeStyle = (ctx.addStyle ?? injectStyle)(BASE_CSS + CONCEAL_CSS + SETTINGS_CSS)
   const t = (zh: string, en: string): string => ((ctx.getLocale?.() ?? 'zh') === 'en' ? en : zh)
 
   // ── 编辑器扩展:高优先级桶(按键)与普通桶(装饰)分开注册。
@@ -91,6 +102,7 @@ export function setup(ctx: PluginContext): () => void {
         () => {
           const s = store.settings()
           return {
+            proseSnippetsEnabled: s.proseSnippetsEnabled,
             wordDelimiters: s.wordDelimiters,
             removeSnippetWhitespace: s.removeSnippetWhitespace,
             autoEnlargeBrackets: s.autoEnlargeBrackets,
@@ -125,12 +137,13 @@ export function setup(ctx: PluginContext): () => void {
         key: new pm.PluginKey('LATEX_SUITE_KEYS'),
         props: {
           handleTextInput: (view: EditorView, _from: number, _to: number, text: string): boolean => {
-            if (view.composing) return false
+            if (view.composing || !view.editable || !store.ready()) return false
             const s = store.settings()
-            if (s.snippetsEnabled && engine.onTextInput(view, _from, _to, text)) return true
+            if (!autoPaused && s.snippetsEnabled && engine.onTextInput(view, _from, _to, text)) return true
             // 自动分式的触发键固定是 `/`;设置里的 autofractionSymbol 是**替换出来的命令**
             // (`\frac` / `\dfrac` / `\tfrac`),不是触发键 —— 上游同款,别把两者搞混。
-            if (s.autofractionEnabled && text === '/') {
+            if (!autoPaused && s.autofractionEnabled && text === '/') {
+              const literal = view.state.applyTransaction(view.state.tr.insertText(text, _from, _to)).state
               if (!autoFraction(view, s.autofractionSymbol, {
                 enabled: true,
                 excludedEnvs: parseExcludedEnvs(s.autofractionExcludedEnvs),
@@ -140,17 +153,20 @@ export function setup(ctx: PluginContext): () => void {
               // 包着它的括号该跟着长高。features 层刻意不在 autoFraction 内部串这一步
               // (那会绕过 autoEnlargeBrackets 这个设置开关),由接线层接。
               if (s.autoEnlargeBrackets) enlarge(view)
+              engine.rememberExpansion(view, literal)
               return true
             }
             // 括号「打穿」:光标右边已经有一个 `)`,再打一次不该多出一个,而是跳过去。
             // ⚠️必须排在自动分式**之后**:`/` 不是右括号,两者互不相干;但排在片段之后是必要的,
             // 用户的片段完全可能以 `)` 收尾。
-            if (s.taboutEnabled && taboutByCloseBracket(view, text, taboutOpts(s))) return true
+            if (!autoPaused && s.taboutEnabled && taboutByCloseBracket(view, text, taboutOpts(s))) return true
             return false
           },
           handleKeyDown: (view: EditorView, event: KeyboardEvent): boolean => {
-            if (view.composing) return false
+            if (view.composing || !view.editable || !store.ready()) return false
             const s = store.settings()
+            if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return false
+            if (event.key === 'Backspace' && !event.shiftKey && engine.undoExpansion(view)) return true
             if (event.key === 'Escape' && tabstops.hasActive(view.state)) {
               view.dispatch(view.state.tr.setMeta(tabstops.key, { clear: true }))
               return true
@@ -173,6 +189,7 @@ export function setup(ctx: PluginContext): () => void {
             if (event.key === 'Tab' && event.shiftKey) {
               return tabstops.cycle(view, -1)
             }
+            if (event.key === 'Enter' && event.shiftKey) return s.matrixShortcutsEnabled && exitMatrix(view, splitList(s.matrixShortcutsEnvNames))
             if (event.key === 'Enter') {
               if (s.matrixShortcutsEnabled && matrixShortcut(view, 'Enter', splitList(s.matrixShortcutsEnvNames), matrixOpts(s))) return true
               return false
@@ -192,11 +209,13 @@ export function setup(ctx: PluginContext): () => void {
       const track = new pm.Plugin({
         key: new pm.PluginKey('LATEX_SUITE_TRACK'),
         view: (v: EditorView) => {
+          views.set(v, () => engine.undoExpansion(v))
           const onFocus = (): void => { lastView = v }
           if (v.hasFocus()) lastView = v
           v.dom.addEventListener('focus', onFocus, true)
           return {
             destroy: () => {
+              views.delete(v)
               v.dom.removeEventListener('focus', onFocus, true)
               if (lastView === v) lastView = null
             },
@@ -212,22 +231,22 @@ export function setup(ctx: PluginContext): () => void {
   // 普通桶:纯装饰 / 纯浮层,不抢任何按键 —— 排在宿主之后即可,也就绝不会挡住内置行为。
   ctx.registerEditorExtension((pm: PmToolkit): PmPlugin[] => [
     ...concealPlugins(pm, {
-      enabled: () => store.settings().concealEnabled,
+      enabled: () => store.ready() && store.settings().concealEnabled,
       revealOnCursor: () => true,
     }),
     ...bracketPlugins(pm, {
-      highlight: () => store.settings().highlightBracketsEnabled,
-      colorize: () => store.settings().colorPairedBracketsEnabled,
+      highlight: () => store.ready() && store.settings().highlightBracketsEnabled,
+      colorize: () => store.ready() && store.settings().colorPairedBracketsEnabled,
     }),
     ...mathPreviewPlugins(pm, {
-      enabled: () => store.settings().mathPreviewEnabled,
+      enabled: () => store.ready() && store.settings().mathPreviewEnabled,
     }),
   ])
 
   // ── 设置面板:宿主给一个裸容器,面板自己画(含片段库的 CodeMirror 编辑器)。
   ctx.registerSettingsView?.({
     id: 'main',
-    title: t('LaTeX Suite 设置', 'LaTeX Suite settings'),
+    title: () => t('LaTeX Suite 设置', 'LaTeX Suite settings'),
     mount: (el) =>
       mountSettings(el, {
         get: () => store.settings(),
@@ -235,6 +254,21 @@ export function setup(ctx: PluginContext): () => void {
         locale: () => ctx.getLocale?.() ?? 'zh',
         snippetErrors: () => store.errors(),
         resetSnippets: () => store.resetSnippets(),
+        reload: () => store.reload(),
+        watchMode: () => store.watchMode(),
+        snippets: () => store.snippets(),
+        paused: () => autoPaused,
+        togglePause,
+        practiceDraft: () => practiceDraft,
+        setPracticeDraft: (text) => { practiceDraft = text },
+        mountPractice: ctx.ui?.mountMarkdownEditor ? (el, opts) => ctx.ui!.mountMarkdownEditor!(el, opts) : undefined,
+        runPracticeCommand: (el, id) => {
+          const view = lastView && el.contains(lastView.dom) ? lastView : [...views.keys()].find((v) => el.contains(v.dom))
+          if (!view || !view.editable) return
+          EDITOR_COMMANDS.find((c) => c.id === id)?.run(view)
+          view.focus()
+        },
+        subscribe: (cb) => { listeners.add(cb); return () => { listeners.delete(cb) } },
         // 面板的挂载 deps 是 [pluginId, def],语言变了宿主不会重挂 —— 面板自己订阅重绘。
         subscribeLocale: (cb: () => void) => ctx.subscribeLocale?.(() => cb()) ?? (() => {}),
       }),
@@ -245,7 +279,7 @@ export function setup(ctx: PluginContext): () => void {
   for (const cmd of EDITOR_COMMANDS) {
     ctx.registerCommand({
       id: `latex-${cmd.id}`,
-      title: t(cmd.titleZh, cmd.titleEn),
+      title: () => t(cmd.titleZh, cmd.titleEn),
       keywords: `latex math 公式 ${cmd.id}`,
       run: () => {
         const view = activeView()
@@ -253,12 +287,27 @@ export function setup(ctx: PluginContext): () => void {
           ctx.app.notify(t('请先把光标放进一篇笔记', 'Put the cursor in a note first'))
           return
         }
-        if (!cmd.run(view)) ctx.app.notify(t('光标不在公式里', 'Cursor is not inside an equation'))
+        if (!view.editable || !cmd.run(view)) ctx.app.notify(t('光标不在公式里', 'Cursor is not inside an equation'))
+        else view.focus()
       },
     })
   }
 
+  ctx.registerCommand({
+    id: 'latex-suite-toggle-auto-expansion', title: () => autoPaused ? t('恢复 LaTeX 自动展开', 'Resume LaTeX automatic expansion') : t('暂停 LaTeX 自动展开', 'Pause LaTeX automatic expansion'),
+    run: togglePause,
+  })
+  ctx.registerCommand({ id: 'latex-suite-reload-snippets', title: () => t('重新加载 LaTeX 片段', 'Reload LaTeX snippets'), run: () => { void store.reload() } })
+  ctx.registerCommand({ id: 'latex-suite-restore-trigger', title: () => t('还原刚刚展开的 LaTeX 触发串', 'Restore the last LaTeX trigger'), run: () => {
+    const view = activeView()
+    if (!view || !view.editable || !views.get(view)?.()) ctx.app.notify(t('没有可还原的自动展开', 'No automatic expansion to restore'))
+    else view.focus()
+  } })
   return () => {
+    offStore()
+    listeners.clear()
+    views.clear()
+    lastView = null
     store.dispose()
     removeStyle()
   }

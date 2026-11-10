@@ -9,6 +9,10 @@
 type Pair = readonly [zh: string, en: string]
 
 const STRINGS = {
+  'tab.guide': ['教程与练习', 'Guide & practice'],
+  'snippets.prose.label': ['正文自动片段', 'Automatic text snippets'],
+  'snippets.prose.desc': ['默认关闭。启用后 mk、dm 等正文片段会自动展开。数学片段始终只在成对公式内工作；代码区不展开。', 'Off by default. Enable to expand text snippets such as mk and dm automatically. Math snippets still require paired delimiters; code is excluded.'],
+  'adv.compatibility': ['兼容说明：U 标志保留导入，撤销分组遵循 Forsion。刚展开时可按 Backspace 还原完整触发串。T/C 模式、includedMacros 和 triggerKey 暂不支持，会报告错误；c 模式也不会在代码区运行。', 'Compatibility: U is accepted on import; Undo grouping follows Forsion. Immediately press Backspace to restore the complete trigger. T/C modes, includedMacros and triggerKey are unsupported and report errors; c-mode snippets never run in code.'],
   // ── 标签页
   'tab.snippets': ['片段', 'Snippets'],
   'tab.autofraction': ['自动分式', 'Auto-fraction'],
@@ -127,8 +131,8 @@ const STRINGS = {
   // ── 显示
   'disp.conceal.label': ['隐藏 LaTeX 语法', 'Conceal LaTeX syntax'],
   'disp.conceal.desc': [
-    '把 \\dot{x}^{2} 直接显示成 ẋ²,光标走到哪儿哪儿还原成源码。默认关着,用熟了再开会很舒服。',
-    'Renders \\dot{x}^{2} as ẋ² and reveals the source under the cursor. Off by default; worth turning on once you are used to the plugin.',
+    '仅在宿主没有原生公式预览时显示简化符号；当前 Forsion 由原生渲染接管，避免双重显示。',
+    'Simplified symbols are used only when the host has no native math preview. Current Forsion owns rendering to avoid duplicate output.',
   ],
   'disp.concealDelay.label': ['还原延迟(毫秒)', 'Reveal delay (ms)'],
   'disp.concealDelay.desc': [
@@ -137,8 +141,8 @@ const STRINGS = {
   ],
   'disp.preview.label': ['公式弹出预览', 'Math popup preview'],
   'disp.preview.desc': [
-    '光标在公式里时,在旁边弹一个渲染结果,不用切到预览模式。',
-    'Shows a rendered preview next to the equation while the cursor is inside it.',
+    '默认使用 Forsion 原生预览。此开关只为没有原生预览的旧宿主提供编辑器下方预览，不重复显示。',
+    'Forsion uses its native preview by default. This fallback displays below the editor only on hosts without native preview.',
   ],
   'disp.highlight.label': ['高亮配对括号', 'Highlight matching bracket'],
   'disp.highlight.desc': [

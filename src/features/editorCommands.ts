@@ -7,7 +7,7 @@
 // 但片段要先落进公式模式才好用,得有个不靠片段的入口。
 
 import type { EditorView } from 'prosemirror-view'
-import { blockTextAt, inInlineCode, isCodeBlock, replaceInBlock } from '../editor/text'
+import { blockTextAt, protectedRange, isCodeBlock, replaceInBlock } from '../editor/text'
 import { hasInlineAtom, mathCursorAt, setSelectionInBlock } from './shared'
 
 const BOXED = '\\boxed{'
@@ -24,7 +24,7 @@ export function boxCurrentEquation(view: EditorView): boolean {
   if (inner.trim().length === 0) return false
   // 公式里夹着行内原子(图片、双链芯片)时放弃:这一步是「读出正文再整段插回去」,
   // 插回去的只是占位符字符,原子节点会被抹掉(见 shared.hasInlineAtom)。
-  if (hasInlineAtom(m.bt, m.innerFrom, m.innerTo)) return false
+  if (hasInlineAtom(m.bt, m.innerFrom, m.innerTo) || protectedRange(m.bt, m.innerFrom, m.innerTo)) return false
 
   // 上游在块公式里还会前后补换行(`\n\boxed{…}\n`)。这里不补:一个 textblock 里塞 `\n`
   // 会让 mathMode 的扫描在换行处停住,这条公式从此在插件眼里不再是公式(见 enterBlockMath 注释)。
@@ -57,14 +57,7 @@ export function enterInlineMath(view: EditorView): boolean {
   return insertMath(view, '$', '$')
 }
 
-/** 插入块级公式,光标落在中间;有选区就把选区包进去。
- *
- *  ⚠️**与任务书写的 `$$\n\n$$` 不同,这里插入的是单行的 `$$  $$`。** 不是偷懒,是那个形态在
- *  Amadeus 里当场就是坏的:地基 mathMode 的 `openMathAt` 一遇到 `\n` 就返回 null,而片段引擎判
- *  「在不在公式里」用的是「光标前的文本 + 刚打的字」这半截串(见 editor/expand.ts 的 line),
- *  永远看不到收尾的 `$$` —— 也就是说 `$$\n…` 里**任何片段都不会触发**,用户会拿到一个
- *  写不了片段的死公式。单行 `$$  $$` 则一路可用(scanMath 认它是 display,openMathAt 也认)。
- *  Amadeus 的多行块公式本来就是另一个 textblock,不是一次纯文本插入能造出来的。 */
+/** Insert a paired display equation in the current textblock; preserve its schema. */
 export function enterBlockMath(view: EditorView): boolean {
   return insertMath(view, '$$ ', ' $$')
 }
@@ -74,7 +67,7 @@ function insertMath(view: EditorView, open: string, close: string): boolean {
   const bt = blockTextAt(view.state)
   if (!bt) return false
   if (isCodeBlock(bt.node)) return false // 代码块里 `$` 就是字面量
-  if (inInlineCode(bt.text, bt.from)) return false // 行内代码同理:`` `$x$` `` 是要展示这几个字符
+  if (protectedRange(bt)) return false // 行内代码同理:`` `$x$` `` 是要展示这几个字符
   // 已经在公式里就别再套一层:`$x$` 中间插 `$…$` 会把定界符插花,那条公式当场作废。
   if (mathCursorAt(view.state)) return false
   // 选区里有行内原子(图片、双链芯片)→ 放弃。下面把选区文本原样重插,
@@ -82,9 +75,11 @@ function insertMath(view: EditorView, open: string, close: string): boolean {
   if (hasInlineAtom(bt, bt.from, bt.to)) return false
 
   const selected = bt.text.slice(bt.from, bt.to)
-  const insert = `${open}${selected}${close}`
+  const prefix = bt.text[bt.from - 1] === '$' ? ' ' : ''
+  const suffix = bt.text[bt.to] === '$' ? ' ' : ''
+  const insert = `${prefix}${open}${selected}${close}${suffix}`
   // 有选区 → 光标停在选区末尾(定界符外侧再打字会跑出公式);没选区 → 停在正中间。
-  const caret = bt.from + open.length + selected.length
+  const caret = bt.from + prefix.length + open.length + selected.length
   view.dispatch(replaceInBlock(view.state, bt, bt.from, bt.to, insert, caret).scrollIntoView())
   return true
 }

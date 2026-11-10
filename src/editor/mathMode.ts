@@ -19,21 +19,29 @@ export interface MathSpan {
   display: boolean
 }
 
+function isEscaped(s: string, at: number): boolean {
+  let n = 0
+  while (at > 0 && s[--at] === '\\') n++
+  return n % 2 === 1
+}
+
 const isSpace = (c: string | undefined): boolean => c === ' ' || c === '\t' || c === '\n' || c === undefined
 
 /** 扫描一段文本里的公式跨度。与宿主 scanMath 同规则(见文件头)。 */
-export function scanMath(s: string): MathSpan[] {
+export function scanMath(s: string, includeEmpty = false): MathSpan[] {
   const spans: MathSpan[] = []
   const n = s.length
   let i = 0
   while (i < n) {
+    if (s[i] === '\\') { i += 2; continue }
     if (s[i] === '$') {
       if (s[i + 1] === '$') {
         if (s[i + 2] !== '$') {
-          const close = s.indexOf('$$', i + 2)
+          let close = s.indexOf('$$', i + 2)
+          while (close !== -1 && isEscaped(s, close)) close = s.indexOf('$$', close + 2)
           if (close > i + 1) {
             const latex = s.slice(i + 2, close).trim()
-            if (latex) {
+            if (latex || includeEmpty) {
               spans.push({ from: i, to: close + 2, innerFrom: i + 2, innerTo: close, display: true })
               i = close + 2
               continue
@@ -49,6 +57,7 @@ export function scanMath(s: string): MathSpan[] {
         while (j < n) {
           const c = s[j]
           if (c === '\n') break
+          if (c === '\\') { if (s[j + 1] === '\n') break; j += 2; continue }
           if (c === '$') {
             if (!isSpace(s[j - 1]) && !/[A-Za-z0-9]/.test(s[j + 1] ?? '')) found = j
             break
@@ -69,27 +78,9 @@ export function scanMath(s: string): MathSpan[] {
 
 /** 光标所在的公式跨度;不在公式里 → null。
  *  边界口径:定界符**内侧**算在里面(`$|x$` 与 `$x|$` 都算),定界符本身之外不算 ——
- *  刚打完开头的 `$` 光标就在 innerFrom,片段应当立刻按数学模式工作。 */
+ *  定界符必须已经配对；孤立的 `$` 不启动数学输入。 */
 export function mathSpanAt(spans: MathSpan[], pos: number): MathSpan | null {
   for (const s of spans) if (pos >= s.innerFrom && pos <= s.innerTo) return s
-  return null
-}
-
-/** **未闭合**的公式开头:用户刚打下 `$` 还没打结尾时,后面的输入也该按数学模式走
- *  (上游靠语法树天然拿到这个态;这里显式补)。返回该 `$`/`$$` 之后的位置,没有则 null。 */
-export function openMathAt(text: string, pos: number, spans: MathSpan[]): { at: number; display: boolean } | null {
-  // 已经落在闭合跨度里就不算「未闭合」
-  if (mathSpanAt(spans, pos)) return null
-  // 从 pos 往前找最近一个不属于任何闭合跨度的 `$`
-  const covered = (i: number): boolean => spans.some((s) => i >= s.from && i < s.to)
-  for (let i = pos - 1; i >= 0; i--) {
-    const c = text[i]
-    if (c === '\n') return null // 行内公式不跨行;跨行的块公式在 Amadeus 里是另一个 textblock
-    if (c !== '$' || covered(i)) continue
-    if (text[i - 1] === '$' && !covered(i - 1)) return { at: i + 1, display: true }
-    if (text[i + 1] === '$') continue // 是块级起手的第一个 `$`,让下一轮命中第二个
-    return { at: i + 1, display: false }
-  }
   return null
 }
 
@@ -167,7 +158,7 @@ export function envNamesAt(text: string, mathFrom: number, pos: number): string[
 
 export interface MathContext {
   mode: Mode
-  /** 光标所在公式(含未闭合的开头);不在公式里 → null。 */
+  /** 光标所在的成对公式;不在公式里 → null。 */
   span: { innerFrom: number; innerTo: number; display: boolean } | null
   envNames: string[]
   /** 光标外层的宏名栈(excludedMacros 用)。 */
@@ -181,14 +172,14 @@ export function mathContext(text: string, pos: number, opts: { inCodeBlock: bool
     mode.codeBlock = true
     return { mode, span: null, envNames: [], macroNames: [] }
   }
-  const spans = scanMath(text)
+  const spans = scanMath(text, true)
   const hit = mathSpanAt(spans, pos)
   let span: MathContext['span'] = null
   if (hit) {
     span = { innerFrom: hit.innerFrom, innerTo: hit.innerTo, display: hit.display }
-  } else {
-    const open = openMathAt(text, pos, spans)
-    if (open) span = { innerFrom: open.at, innerTo: pos, display: open.display }
+  } else if (text[pos - 1] === '$' && text[pos] === '$' && text[pos - 2] !== '$' && text[pos + 1] !== '$' && !isEscaped(text, pos - 1)) {
+    // An empty inline pair $|$ is editable, but a lone opening $ never captures prose.
+    span = { innerFrom: pos, innerTo: pos, display: false }
   }
   if (!span) {
     mode.text = true

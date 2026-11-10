@@ -1,7 +1,7 @@
 {
   "name": "forsion-plugin-latex-suite",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Forsion/Amadeus LaTeX Suite 插件(obsidian-latex-suite 的 ProseMirror 重实现;产物 main.js 已提交)",
   "type": "module",
   "scripts": {
@@ -9,7 +9,9 @@
     "check": "node check.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "verify": "npm run typecheck && npm run test && npm run build && npm run check"
+    "verify": "npm run typecheck && npm run test && npm run build && npm run check",
+    "test:ui": "node test/settingsUi/run.mjs",
+    "test:host": "node test/acceptance/electron.cjs"
   },
   "devDependencies": {
     "@types/katex": "^0.16.8",
