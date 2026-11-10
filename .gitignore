@@ -1,3 +1,5 @@
 node_modules
 test/settingsUi/.out/
 test/acceptance/.out/
+
+.DS_Store
