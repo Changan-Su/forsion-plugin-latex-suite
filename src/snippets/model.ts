@@ -2,7 +2,7 @@
 //
 // 与上游的结构差异(**刻意**):上游 1.12 引入了一套 luasnip 风格的节点树(ArrayNode/TextNode/
 // TabstopNode)做替换文本的中间表示。那是实现细节,不是用户看得见的功能 —— 这里替换文本一路是字符串,
-// tabstop 在展开那一步统一解析(见 tabstopParse.ts)。用户写的片段格式与上游完全一致。
+// tabstop 在展开那一步统一解析(见 tabstopParse.ts)。兼容范围见 docs/custom-snippets.md。
 
 import type { Mode } from '../editor/mathMode'
 import { inMath } from '../editor/mathMode'
@@ -72,6 +72,7 @@ export function shouldRunInMode(snip: Mode, cur: Mode): boolean {
 export type SnippetType = 'string' | 'regex' | 'visual'
 
 export interface Snippet {
+  triggerAfter?: string | RegExp
   type: SnippetType
   /** string/visual 用字符串;regex 用已编译好的、锚在行尾的正则。 */
   trigger: string | RegExp
@@ -91,6 +92,7 @@ export interface Snippet {
 }
 
 export interface MatchResult {
+  afterLength?: number
   /** 触发串在**当前行**里的起点(text 偏移)。 */
   triggerPos: number
   /** 替换文本(已代入捕获组,尚未解析 tabstop)。 */
@@ -124,7 +126,20 @@ function fromUserFn(out: unknown, trigger: string): string | null {
  * @param line   行首到光标(含刚敲进去的那个字符)的文本
  * @param sel    当前选中的文本(visual 片段用;非 visual 片段有选区时一律不跑)
  */
-export function matchSnippet(snippet: Snippet, line: string, sel: string): MatchResult | null {
+export function matchSnippet(snippet: Snippet, line: string, sel: string, after = ''): MatchResult | null {
+  let afterLength: number | undefined
+  if (snippet.triggerAfter !== undefined) {
+    if (typeof snippet.triggerAfter === 'string') {
+      if (!after.startsWith(snippet.triggerAfter)) return null
+      afterLength = snippet.triggerAfter.length
+    } else {
+      snippet.triggerAfter.lastIndex = 0
+      const hit = snippet.triggerAfter.exec(after)
+      if (!hit || hit.index !== 0) return null
+      afterLength = hit[0].length
+    }
+  }
+  const tail = afterLength === undefined ? {} : { afterLength }
   const hasSel = sel.length > 0
   if (snippet.type === 'visual') {
     if (!hasSel) return null
@@ -150,7 +165,7 @@ export function matchSnippet(snippet: Snippet, line: string, sel: string): Match
         ? fromUserFn(snippet.replacement.call(snippet, m), snippet.triggerSource)
         : applyCaptures(snippet.replacement, m.slice(1))
     if (insert === null) return null
-    return { triggerPos: m.index, insert }
+    return { triggerPos: m.index, insert, ...tail }
   }
 
   const trig = snippet.trigger as string
@@ -160,7 +175,7 @@ export function matchSnippet(snippet: Snippet, line: string, sel: string): Match
       ? fromUserFn(snippet.replacement.call(snippet, trig), snippet.triggerSource)
       : snippet.replacement
   if (insert === null) return null
-  return { triggerPos: line.length - trig.length, insert }
+  return { triggerPos: line.length - trig.length, insert, ...tail }
 }
 
 /** 词边界校验(`w` 标志):触发串前后都必须是分隔符。 */

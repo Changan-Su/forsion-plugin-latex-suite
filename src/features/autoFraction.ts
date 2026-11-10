@@ -8,7 +8,7 @@
 // 光标;返回 true 让调用方吞掉这次输入,`/` 不会再落到文档里。
 
 import type { EditorView } from 'prosemirror-view'
-import { replaceInBlock } from '../editor/text'
+import { replaceInBlock, protectedRange } from '../editor/text'
 import type { MathCursor } from './shared'
 import { hasInlineAtom, mathCursorAt, matchBracketBackward, matchBracketForward, openBracketOf } from './shared'
 
@@ -84,7 +84,7 @@ export function autoFraction(view: EditorView, symbol: string, opts: AutoFractio
   if (start >= to) return false // 光标前面没东西可当分子(`$/` 或 `$ /`)
   // 分子里有行内原子(图片、双链芯片)就放弃:下面是「读出这段文本再插回去」,
   // 插回去的只会是占位符字符,真节点当场没了(见 shared.hasInlineAtom)。
-  if (hasInlineAtom(m.bt, start, to)) return false
+  if (hasInlineAtom(m.bt, start, to) || protectedRange(m.bt, start, to)) return false
 
   let numerator = m.bt.text.slice(start, to)
   // `(a+b)/` → `\frac{a+b}{}`:外层括号是用来圈定分子的,进了 `\frac{}` 就没用了。

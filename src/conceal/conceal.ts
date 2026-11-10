@@ -40,7 +40,7 @@ import type { EditorState, Plugin } from 'prosemirror-state'
 import type { Decoration, DecorationSet, EditorView } from 'prosemirror-view'
 import type { Node as PmNode } from 'prosemirror-model'
 import type { PmToolkit } from '../../types/forsion'
-import { blockString, isCodeBlock } from '../editor/text'
+import { mathBlockString, isCodeBlock } from '../editor/text'
 import { scanConceal, type ConcealSpan } from './scan'
 
 /** 藏源码的类(CSS display:none)。 */
@@ -56,7 +56,7 @@ const WIDGET = 'latex-suite-conceal'
 const HOST_MATH_KEY = 'amadeus-math-live-preview$'
 
 /** 宿主 buildBlockString 里的硬换行节点名。 */
-const BREAK_NAMES = new Set(['hardbreak', 'hard_break', 'break'])
+
 
 interface BlockScan {
   /** 块文本偏移 → 文档位置的基址。 */
@@ -90,22 +90,7 @@ const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.m
  *
  * 导出只为单测:这是与宿主的一条契约,值得被钉住。
  */
-export function hostBlockString(node: PmNode): string {
-  let out = blockString(node)
-  let off = 0
-  node.forEach((child) => {
-    const len = child.isText ? (child.text ?? '').length : child.nodeSize
-    if (child.isText) {
-      if (child.marks.some((m) => m.type.name === 'code' || m.type.name === 'inlineCode')) {
-        out = out.slice(0, off) + ' '.repeat(len) + out.slice(off + len)
-      }
-    } else if (BREAK_NAMES.has(child.type.name)) {
-      out = out.slice(0, off) + '\n'.repeat(len) + out.slice(off + len)
-    }
-    off += len
-  })
-  return out
-}
+export const hostBlockString = mathBlockString
 
 /** 全量扫描。Amadeus 一个块 = 一个独立的小 Milkdown 编辑器(见宿主 editorExtensions.ts:工厂
  *  每个编辑器实例调一次),所以「整篇文档」在这里通常就是一两个 textblock —— 不做视口裁剪。
@@ -296,6 +281,7 @@ export function concealPlugins(
         const st = key.getState(state)
         if (!st || !st.blocks.length) return null
         const focus = hostMathFocus(state, hostKeyCache)
+        if (focus !== null) return null // Native math rendering owns the result; no duplicate symbols.
         const reveal = opts.revealOnCursor()
         if (
           memo &&

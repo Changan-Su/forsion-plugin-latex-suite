@@ -7,11 +7,11 @@
 // 内容里没有触发词就不动。
 //
 // 由片段引擎在展开出含触发词的片段后回调(EngineSettings.autoEnlargeBrackets),所以要能在
-// **公式还没闭合**时工作 —— 用 ctx.span 而不是 closed span。
+// paired formulas only; literal code and escaped markers are masked before scanning.
 
 import type { EditorView } from 'prosemirror-view'
 import type { Transaction } from 'prosemirror-state'
-import { textSelectionAt } from '../editor/text'
+import { textSelectionAt, mathBlockString } from '../editor/text'
 import type { Token } from './shared'
 import { mathCursorAt, tokenize } from './shared'
 
@@ -85,14 +85,7 @@ export function autoEnlargeBrackets(view: EditorView, opts: EnlargeOptions = {})
   const triggers = normalizeTriggers(opts.triggers ?? DEFAULT_ENLARGE_TRIGGERS)
   if (triggers.length === 0) return
   const space = opts.space === false ? '' : ' '
-  // ⚠️公式还没闭合时 ctx.span 的 innerTo **就是光标**,只扫到那儿等于永远看不见右括号 ——
-  // 而右括号总在光标后面(片段刚展开出 `(\sum_i x|)`),括号配对会一个都配不上。
-  // 所以往后扫;但只能扫到下一个 `$` 为止:那个 `$` 是 scanMath 拒收的杂散符号(真能配对的话
-  // m.closed 就不是 null 了),拿它当保守边界正好 —— 一路扫到块尾会把公式**后面的散文**
-  // 里的括号也放大掉(`$(\sum a` 后面跟着一句「(见 \int 附注)」就中招)。
-  const stray = m.bt.text.indexOf('$', m.pos)
-  const scanEnd = m.closed ? m.innerTo : stray === -1 ? m.bt.text.length : stray
-  const inner = m.bt.text.slice(m.innerFrom, scanEnd)
+  const inner = mathBlockString(m.bt.node).slice(m.innerFrom, m.innerTo)
   const tokens = tokenize(inner)
 
   const edits: Edit[] = []

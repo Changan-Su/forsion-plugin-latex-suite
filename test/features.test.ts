@@ -203,8 +203,8 @@ describe('autoEnlargeBrackets', () => {
   it('没有触发词就不动', () => {
     expect(run('$(x+1)$', 5, EN)).toEqual([true, '$(x+1|)$'])
   })
-  it('公式还没闭合时也要能配对(片段展开的常态)', () => {
-    expect(run('$(\\sum_i x)', 10, EN)).toEqual([true, '$\\left( \\sum_i x| \\right)'])
+  it('未闭合公式不改写', () => {
+    expect(run('$(\\sum_i x)', 10, EN)).toEqual([true, '$(\\sum_i x|)'])
   })
 })
 

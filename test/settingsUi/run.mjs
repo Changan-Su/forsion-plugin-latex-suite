@@ -108,7 +108,7 @@ const rowVisible = (label) =>
 
 // 1. 结构
 ok('面板已挂载', (await page.locator('.ls-settings').count()) === 1)
-ok('七个标签', (await page.locator('.ls-tab').count()) === 7, await page.locator('.ls-tab').allTextContents())
+ok('八个标签', (await page.locator('.ls-tab').count()) === 8, await page.locator('.ls-tab').allTextContents())
 ok('默认停在片段页', (await page.locator('.ls-tab.is-active').textContent()) === '片段')
 ok('CM6 已渲染', (await page.locator('.ls-cm .cm-editor').count()) === 1)
 ok('CM6 有行号', (await page.locator('.ls-cm .cm-lineNumbers').count()) === 1)
@@ -121,10 +121,10 @@ ok('来源=user 时不显示「片段文件」行', (await rowVisible('片段文
 await page.locator('select.ls-select').nth(1).selectOption('file')
 await page.waitForTimeout(60)
 ok('切到 file 后「片段文件」行出现', (await rowVisible('片段文件')) === true)
-ok('切到 file 后出现「外部加载」提示', await page.locator('.ls-note').isVisible())
+ok('切到 file 后出现「外部加载」提示', await pane(0).locator('.ls-note').first().isVisible())
 await page.locator('select.ls-select').nth(1).selectOption('user')
 await page.waitForTimeout(60)
-ok('切回 user 后提示隐藏', !(await page.locator('.ls-note').isVisible()))
+ok('切回 user 后提示隐藏', !(await pane(0).locator('.ls-note').first().isVisible()))
 
 // 3. 开关联动
 await page.locator('.ls-tab').nth(1).click()
@@ -143,19 +143,17 @@ ok('打字瞬间尚未落盘', (await page.evaluate(() => window.H.settings().au
 await page.waitForTimeout(420)
 ok('300ms 后落盘', (await page.evaluate(() => window.H.settings().autofractionSymbol)) === '\\dfrac')
 
-// 5. 非负整数校验
+// 5. Only effective settings are visible; recursion keeps numeric validation.
 await page.locator('.ls-tab').nth(5).click()
-await page.waitForTimeout(60)
-await pane(5).locator('.ls-switch').first().click()
-await page.waitForTimeout(60)
-ok('conceal 打开后延迟行出现', (await rowVisible('还原延迟(毫秒)')) === true)
-await pane(5).locator('input.ls-input--num').fill('abc')
+ok('未实现的 conceal 延迟不再显示', (await pane(5).locator('input.ls-input--num').count()) === 0)
+await page.locator('.ls-tab').nth(6).click()
+await pane(6).locator('input.ls-input--num').fill('abc')
 await page.waitForTimeout(420)
-ok('非法数字不落盘', (await page.evaluate(() => window.H.settings().concealRevealTimeout)) === 0)
-ok('非法数字标红', (await pane(5).locator('input.ls-input--num').getAttribute('aria-invalid')) === 'true')
-await pane(5).locator('input.ls-input--num').fill('300')
+ok('非法数字不落盘', (await page.evaluate(() => window.H.settings().snippetRecursion)) === 0)
+ok('非法数字标红', (await pane(6).locator('input.ls-input--num').getAttribute('aria-invalid')) === 'true')
+await pane(6).locator('input.ls-input--num').fill('3')
 await page.waitForTimeout(420)
-ok('合法数字落盘', (await page.evaluate(() => window.H.settings().concealRevealTimeout)) === 300)
+ok('合法数字落盘', (await page.evaluate(() => window.H.settings().snippetRecursion)) === 3)
 
 // 6. 片段编辑器:好语法落盘 / 坏语法不落盘
 await page.locator('.ls-tab').nth(0).click()
@@ -216,21 +214,21 @@ await page.evaluate(() => window.H.setLocale('zh'))
 await page.waitForTimeout(200)
 
 // 10b. 重画后标签停在原处 + 数字框红边不留残
-await page.locator('.ls-tab').nth(5).click()
+await page.locator('.ls-tab').nth(6).click()
 await page.waitForTimeout(80)
 await page.evaluate(() => window.H.setLocale('en'))
 await page.waitForTimeout(200)
-ok('重画后仍停在原标签', (await page.locator('.ls-tab.is-active').textContent()) === 'Display')
+ok('重画后仍停在原标签', (await page.locator('.ls-tab.is-active').textContent()) === 'Advanced')
 await page.evaluate(() => window.H.setLocale('zh'))
 await page.waitForTimeout(200)
-await pane(5).locator('input.ls-input--num').fill('oops')
+await pane(6).locator('input.ls-input--num').fill('oops')
 await page.waitForTimeout(420)
-ok('非法值当场标红', (await pane(5).locator('input.ls-input--num').getAttribute('aria-invalid')) === 'true')
-await pane(5).locator('.ls-switch').last().click() // 改别的设置 → 触发 syncAll
+ok('非法值当场标红', (await pane(6).locator('input.ls-input--num').getAttribute('aria-invalid')) === 'true')
+await pane(6).locator('.ls-switch').last().click() // 改别的设置 → 触发 syncAll
 await page.waitForTimeout(80)
-ok('走开后红边与非法值一起收回', (await pane(5).locator('input.ls-input--num').getAttribute('aria-invalid')) === null)
-ok('框里恢复成真值', (await pane(5).locator('input.ls-input--num').inputValue()) === '300')
-await pane(5).locator('.ls-switch').last().click()
+ok('走开后红边与非法值一起收回', (await pane(6).locator('input.ls-input--num').getAttribute('aria-invalid')) === null)
+ok('框里恢复成真值', (await pane(6).locator('input.ls-input--num').inputValue()) === '3')
+await pane(6).locator('.ls-switch').last().click()
 await page.waitForTimeout(80)
 await page.locator('.ls-tab').nth(0).click()
 await page.waitForTimeout(80)

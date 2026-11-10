@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { matchSnippet, onWordBoundary, parseOptions, shouldRunInMode, sortSnippets, trimReplacementWhitespace, type Snippet } from '../src/snippets/model'
 import { parseTabstops } from '../src/snippets/tabstopParse'
 import { parseSnippets } from '../src/snippets/parse'
-import { mathContext, scanMath, inTextEnv, envNamesAt, openMathAt } from '../src/editor/mathMode'
+import { mathContext, scanMath, inTextEnv, envNamesAt } from '../src/editor/mathMode'
 import { DEFAULT_SNIPPETS } from '../src/snippets/defaults'
 import { DEFAULT_SNIPPET_VARIABLES } from '../src/snippets/variables'
 import { normalizeSnippets } from '../src/snippets/parse'
@@ -166,8 +166,8 @@ describe('数学模式扫描', () => {
     expect(s[0].display).toBe(true)
   })
   it('光标在公式里 = 数学模式', () => {
-    const line = '$x+'
-    const c = mathContext(line, line.length, { inCodeBlock: false })
+    const line = '$x+$'
+    const c = mathContext(line, line.length - 1, { inCodeBlock: false })
     expect(c.mode.inlineMath).toBe(true)
   })
   it('光标在正文里 = 文本模式', () => {
@@ -179,9 +179,9 @@ describe('数学模式扫描', () => {
     expect(c.mode.codeBlock).toBe(true)
     expect(c.mode.inlineMath).toBe(false)
   })
-  it('未闭合的 $ 也算进了公式(边打边判)', () => {
+  it('a lone opening dollar does not activate math input', () => {
     const text = '$\\alp'
-    expect(openMathAt(text, text.length, scanMath(text))?.at).toBe(1)
+    expect(mathContext(text, text.length, { inCodeBlock: false }).mode.text).toBe(true)
   })
   it('\\text{} 里算文本环境', () => {
     const t = '$a + \\text{里面 '

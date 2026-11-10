@@ -1,6 +1,6 @@
 // 片段库解析:用户写的那份数组 → 可执行的 Snippet[]。
 //
-// 用户格式与上游**逐字兼容** —— 从 Obsidian 那边把 snippets.js 整份贴过来就能用,这是移植的意义所在。
+// Common upstream array syntax is supported; unsupported modes/fields report diagnostics.
 // 支持 JSON,也支持带正则字面量和函数的 JS 数组(上游同款)。求值用 `new Function`:插件本身就跑在
 // `new Function` 里,这里不构成新的信任边界;而且这是用户自己写进自己片段库的代码。
 
@@ -20,7 +20,7 @@ export interface RawSnippet {
   description?: string
   /** 正则片段的附加 flag(与 trigger 自带的 flag 合并)。 */
   flags?: string
-  /** 触发串**之后**还必须匹配上的内容(不消耗它,只作条件)。 */
+  /** Match and consume content immediately after the cursor. */
   triggerAfter?: string | RegExp
   /** 不在这些 `\begin{名字}` 环境里触发。 */
   excludedEnvironments?: string[]
@@ -74,7 +74,12 @@ function normalizeOne(raw: RawSnippet, vars: Record<string, string>): Snippet | 
     return `片段 "${describe(raw)}" 的 replacement 只能是字符串或函数`
   }
 
+  for (const key of ['includedMacros', 'triggerKey']) {
+    if (key in raw) return `Unsupported snippet field: ${key} (${describe(raw)})`
+  }
+  if (/[TC]/.test(raw.options ?? '')) return `Unsupported snippet mode T/C: ${describe(raw)}`
   const options = parseOptions(raw.options ?? '')
+  if (typeof raw.replacement === 'string' && raw.replacement.includes('${VISUAL}')) options.visual = true
   const isRegex = options.regex || raw.trigger instanceof RegExp
   const priority = Number(raw.priority ?? 0) || 0
   const description = String(raw.description ?? '')
@@ -84,6 +89,20 @@ function normalizeOne(raw: RawSnippet, vars: Record<string, string>): Snippet | 
     ? raw.excludedMacros.map((m) => (typeof m === 'string' ? m : String(m?.name ?? ''))).filter(Boolean)
     : []
   const triggerSource = describe(raw)
+
+  let triggerAfter: string | RegExp | undefined
+  if (raw.triggerAfter !== undefined) {
+    if (options.visual) return `triggerAfter is not supported on visual snippets: ${describe(raw)}`
+    if (!isRegex) {
+      if (typeof raw.triggerAfter !== 'string') return `triggerAfter must be a string: ${describe(raw)}`
+      triggerAfter = raw.triggerAfter
+    } else {
+      const source = raw.triggerAfter instanceof RegExp ? raw.triggerAfter.source : String(raw.triggerAfter)
+      const flags = raw.triggerAfter instanceof RegExp ? raw.triggerAfter.flags : raw.flags ?? (raw.trigger instanceof RegExp ? raw.trigger.flags : '')
+      try { triggerAfter = new RegExp(`^(?:${insertVariables(source, vars)})`, filterFlags(flags).replace(/[gy]/g, '')) }
+      catch { return `Invalid triggerAfter: ${describe(raw)}` }
+    }
+  }
 
   if (options.visual) {
     if (typeof raw.trigger !== 'string') return `visual 片段 "${triggerSource}" 的 trigger 必须是字符串`
@@ -97,6 +116,7 @@ function normalizeOne(raw: RawSnippet, vars: Record<string, string>): Snippet | 
       excludedEnvironments,
       excludedMacros,
       triggerSource,
+      triggerAfter,
     }
   }
 
@@ -123,6 +143,7 @@ function normalizeOne(raw: RawSnippet, vars: Record<string, string>): Snippet | 
       excludedEnvironments,
       excludedMacros,
       triggerSource,
+      triggerAfter,
     }
   }
 
@@ -136,6 +157,7 @@ function normalizeOne(raw: RawSnippet, vars: Record<string, string>): Snippet | 
     excludedEnvironments,
     excludedMacros,
     triggerSource,
+    triggerAfter,
   }
 }
 

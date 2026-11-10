@@ -38,6 +38,8 @@ export interface TabstopApi {
   /** Tab / Shift-Tab。返回 false 表示没有活动片段,调用方应放行给宿主(列表缩进等)。 */
   cycle(view: EditorView, dir: 1 | -1): boolean
   hasActive(state: EditorState): boolean
+  snapshot(state: EditorState): Frame[]
+  restore(tr: Transaction, stack: Frame[]): Transaction
 }
 
 /** 从解析结果 + 插入基址算出文档坐标的 group。 */
@@ -115,8 +117,9 @@ export function createTabstops(pm: PmToolkit): TabstopApi {
           const top = stack.length - 1
           stack = stack.map((f, i) => mapFrame(f, tr, i === top)).filter((f): f is Frame => f !== null)
         }
-        const meta = tr.getMeta(key) as { push?: DocGroup[]; go?: 1 | -1; clear?: true } | undefined
+        const meta = tr.getMeta(key) as { push?: DocGroup[]; go?: 1 | -1; clear?: true; restore?: Frame[] } | undefined
         if (meta?.clear) stack = []
+        if (meta?.restore) stack = meta.restore
         if (meta?.push) stack = [...stack, { groups: meta.push, active: 0 }]
         if (meta?.go && stack.length) {
           const top = stack[stack.length - 1]
@@ -181,6 +184,8 @@ export function createTabstops(pm: PmToolkit): TabstopApi {
     plugin,
     key,
     push: (tr, groups) => tr.setMeta(key, { push: groups }),
+    snapshot: (state) => key.getState(state)?.stack ?? [],
+    restore: (tr, stack) => tr.setMeta(key, { restore: stack }),
     hasActive: (state) => (key.getState(state)?.stack.length ?? 0) > 0,
     cycle: (view, dir) => {
       const st = key.getState(view.state)

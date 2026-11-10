@@ -4,7 +4,7 @@
 // 中间靠 serializeRawSnippets 转一道。这一步一旦漂了(比如有人顺手改成 JSON.stringify),
 // 用户点「恢复默认」拿到的会是一份 `{}` 满地的废片段库 —— 而且要等到他真去点才发现。
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_SETTINGS, mergeSettings, serializeRawSnippets, splitList } from '../src/settingsUi/model'
+import { DEFAULT_SETTINGS, mergeSettings, restoreLegacyDefaultSnippets, serializeRawSnippets, splitList } from '../src/settingsUi/model'
 import { DEFAULT_SNIPPETS } from '../src/snippets/defaults'
 import { evalSnippetSource, parseSnippets } from '../src/snippets/parse'
 import { DEFAULT_SNIPPET_VARIABLES } from '../src/snippets/variables'
@@ -43,13 +43,29 @@ describe('默认片段库的文本形态', () => {
 
   it('序列化不吃掉附加字段', () => {
     const out = serializeRawSnippets([
-      { trigger: /a(\d)/, replacement: 'x', options: 'mA', priority: 3, description: '说明', flags: 'i', excludedEnvironments: ['align'] },
+      { trigger: /a(\d)/, replacement: 'x', options: 'mA', priority: 3, description: '说明', flags: 'i', excludedEnvironments: ['align'], excludedMacros: ['ce', { name: 'pu' }], triggerAfter: /abc/i },
     ])
     const { raw, error } = evalSnippetSource(out)
     expect(error).toBeUndefined()
     expect(raw[0].flags).toBe('i')
     expect(raw[0].priority).toBe(3)
     expect(raw[0].excludedEnvironments).toEqual(['align'])
+    expect(raw[0].excludedMacros).toEqual(['ce', { name: 'pu' }])
+    expect(String(raw[0].triggerAfter)).toBe('/abc/i')
+  })
+
+  it('默认化学宏排除规则在序列化后仍完整保留', () => {
+    const { raw } = evalSnippetSource(text)
+    expect(raw.filter((s) => s.excludedMacros?.length).map((s) => s.excludedMacros))
+      .toEqual(DEFAULT_SNIPPETS.filter((s) => s.excludedMacros?.length).map((s) => s.excludedMacros))
+  })
+
+  it('只修复逐字一致的旧默认库，不覆盖自定义片段', () => {
+    const legacy = serializeRawSnippets(DEFAULT_SNIPPETS.map(({ excludedMacros: _omitted, ...snippet }) => snippet))
+    expect(restoreLegacyDefaultSnippets(legacy)).toBe(DEFAULT_SETTINGS.snippetsSourceText)
+    const custom = `${legacy}\n// my custom copy`
+    expect(restoreLegacyDefaultSnippets(custom)).toBe(custom)
+    expect(restoreLegacyDefaultSnippets('[]')).toBe('[]')
   })
 })
 
@@ -75,6 +91,8 @@ describe('mergeSettings 的防御', () => {
   it('认识的键照收', () => {
     expect(mergeSettings({ snippetsEnabled: false, concealRevealTimeout: 300 }).concealRevealTimeout).toBe(300)
     expect(mergeSettings({ snippetsEnabled: false }).snippetsEnabled).toBe(false)
+    expect(mergeSettings({ mathPreviewEnabled: true, proseSnippetsEnabled: true }))
+      .toMatchObject({ mathPreviewEnabled: true, proseSnippetsEnabled: true })
   })
   it('类型不对 / 负数 / 非法枚举一律丢弃', () => {
     expect(mergeSettings({ snippetsEnabled: 'yes' }).snippetsEnabled).toBe(true)

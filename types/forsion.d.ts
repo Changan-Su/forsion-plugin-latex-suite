@@ -40,19 +40,28 @@ export interface PluginAppApi {
 
 export interface SettingsViewContribution {
   id: string
-  title?: string
+  title?: string | (() => string)
   mount(el: HTMLElement): void | (() => void)
 }
 
 export interface CommandContribution {
   id: string
-  title: string
+  title: string | (() => string)
   keywords?: string
   run(): void
 }
 
 export interface PluginContext {
+  addStyle?(css: string): () => void
   app: PluginAppApi
+  ui?: {
+    mountMarkdownEditor?(el: HTMLElement, opts: { value: string; label?: string; modes?: boolean; vault?: boolean; onChange?(value: string): void }): {
+      getValue(): string
+      update(patch: { value?: string }): void
+      focus(): void
+      dispose(): void
+    }
+  }
   registerCommand(command: CommandContribution): void
   notify?(message: string, opts?: { level?: 'info' | 'success' | 'warning' | 'error'; title?: string; sticky?: boolean }): void
   getLocale?(): 'zh' | 'en'

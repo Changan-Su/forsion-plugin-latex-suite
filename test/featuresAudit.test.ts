@@ -132,7 +132,7 @@ describe('括号放大:触发词补反斜杠', () => {
   it('未闭合公式:扫描不越过杂散 $', () => {
     const e = mk('$(\\sum a|) more $ (\\int b)')
     autoEnlargeBrackets(e.view)
-    expect(e.out()).toBe('$\\left( \\sum a| \\right) more $ (\\int b)')
+    expect(e.out()).toBe('$(\\sum a|) more $ (\\int b)')
   })
 })
 

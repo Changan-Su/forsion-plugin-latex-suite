@@ -10,7 +10,7 @@ import type { EditorState, Plugin } from 'prosemirror-state'
 import type { DecorationSet } from 'prosemirror-view'
 import type { Node as PmNode } from 'prosemirror-model'
 import type { PmToolkit } from '../../types/forsion'
-import { blockString } from './text'
+import { mathBlockString, isCodeBlock } from './text'
 import { scanMath } from './mathMode'
 
 /** 成对符号:LaTeX 里 `\left(`/`\right)` 这类命令形态由 tabout 处理,这里只管裸括号。 */
@@ -66,7 +66,8 @@ export function bracketPlugins(pm: PmToolkit, opts: BracketOptions): Plugin[] {
 
     state.doc.descendants((node: PmNode, pos: number) => {
       if (!node.isTextblock) return true
-      const text = blockString(node)
+      if (isCodeBlock(node)) return false
+      const text = mathBlockString(node)
       const base = pos + 1
       for (const span of scanMath(text)) {
         for (const p of pairBrackets(text, span.innerFrom, span.innerTo)) {
@@ -93,7 +94,7 @@ export function bracketPlugins(pm: PmToolkit, opts: BracketOptions): Plugin[] {
       state: {
         init: (_c, state) => build(state),
         // 只在文档或选区变了时重算 —— decorations() 每次都全量重扫会在长笔记上卡顿。
-        apply: (tr, prev, _old, state) => (tr.docChanged || tr.selectionSet ? build(state) : prev),
+        apply: (tr, prev, _old, state) => (tr.docChanged || tr.selectionSet || tr.getMeta('latex-suite-settings') ? build(state) : prev),
       },
       props: {
         decorations: (state) => key.getState(state) ?? null,

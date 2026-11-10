@@ -1,10 +1,7 @@
 // 矩阵快捷键:光标在 matrix / cases / align 这类环境里时,Tab 加一个单元格,Enter 换一行。
 //
-// 对应上游 features/matrix_shortcuts.ts。上游每个动作都有「多行 / 单行」两条分支 —— Amadeus 里
-// 一个 textblock 装的公式天然是单行(跨行的 `$$` 块是另一个 textblock,见 editor/mathMode.ts),
-// 所以这里**只保留单行分支**。这不是砍功能:`\\` 在 KaTeX 里本来就是行分隔符,不需要真的敲回车,
-// 上游的单行分支 `replaceSelection(" \\\\  ")` 干的就是这件事。真敲进去一个 `\n` 反而会让
-// mathMode 的扫描在换行处停下 —— 那条公式从此在插件眼里不是公式了。
+// Tab adds a cell; Enter inserts a LaTeX row separator. Hardbreaks within the
+// same textblock retain their positions. Shift+Enter exits a paired environment.
 
 import type { EditorView } from 'prosemirror-view'
 import type { BlockText } from '../editor/text'
@@ -75,4 +72,26 @@ export function matrixShortcut(
 function insertAt(view: EditorView, bt: BlockText, text: string): boolean {
   view.dispatch(replaceInBlock(view.state, bt, bt.from, bt.to, text, bt.from + text.length).scrollIntoView())
   return true
+}
+
+/** Shift+Enter exits the nearest supported matrix environment without inserting a row. */
+export function exitMatrix(view: EditorView, envs: string[] = DEFAULT_MATRIX_ENVS): boolean {
+  const m = mathCursorAt(view.state)
+  if (!m || m.ctx.mode.textEnv || !view.state.selection.empty) return false
+  const name = m.ctx.envNames[m.ctx.envNames.length - 1]
+  if (!name || !envs.includes(name)) return false
+  const re = /\\(begin|end)\{([^}]*)\}/g
+  re.lastIndex = m.pos
+  const nested: string[] = []
+  let hit: RegExpExecArray | null
+  while ((hit = re.exec(m.bt.text)) && hit.index < m.innerTo) {
+    if (hit[1] === 'begin') nested.push(hit[2])
+    else if (nested.length) {
+      if (nested.pop() !== hit[2]) return false
+    } else if (hit[2] === name) {
+      setCursorInBlock(view, m.bt, hit.index + hit[0].length)
+      return true
+    } else return false
+  }
+  return false
 }

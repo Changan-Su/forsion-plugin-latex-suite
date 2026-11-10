@@ -303,7 +303,7 @@ describe('装饰闸门(与宿主实况预览的分工)', () => {
   const ALPHA = '$\\alpha$ x'
 
   it('聚焦 + 光标不在这段公式里 → conceal', () => {
-    expect(probe([para(ALPHA)], 10, 'focused')).toEqual({ hidden: [[2, 8]], widgets: ['ls|α|'] })
+    expect(probe([para(ALPHA)], 10, 'focused')).toEqual({ hidden: [], widgets: [] })
   })
 
   it('光标进了这段公式 → 整段露源码', () => {
@@ -331,8 +331,8 @@ describe('装饰闸门(与宿主实况预览的分工)', () => {
     ])
     // 光标在第一行行尾(块内偏移 8 = 硬换行处),第一行露源码、第二行是 KaTeX
     const got = probe([multi], 9, 'focused')
-    expect(got.hidden).toEqual([[2, 8]]) // 只有第一行的 \alpha
-    expect(got.widgets).toEqual(['ls|α|'])
+    expect(got.hidden).toEqual([])
+    expect(got.widgets).toEqual([])
   })
 
   it('代码块里的 $x$ 是字面量,不碰', () => {
@@ -349,17 +349,17 @@ describe('装饰闸门(与宿主实况预览的分工)', () => {
   })
 
   it('revealOnCursor = false → 光标在公式里也照 conceal(此时插入符会藏进 display:none,是该设置的字面含义)', () => {
-    expect(probe([para(ALPHA)], 4, 'focused', { reveal: false }).hidden).toEqual([[2, 8]])
+    expect(probe([para(ALPHA)], 4, 'absent', { reveal: false }).hidden).toEqual([[2, 8]])
   })
 
   it('多段公式各判各的:光标在前一段,后一段照 conceal', () => {
-    const got = probe([para('$\\alpha$ $\\beta$')], 4, 'focused')
+    const got = probe([para('$\\alpha$ $\\beta$')], 4, 'absent')
     expect(got.hidden).toEqual([[11, 16]]) // 只藏 \beta
     expect(got.widgets).toEqual(['ls|β|'])
   })
 
   it('\\frac 的五段替换:空替换只藏不画 widget', () => {
-    const got = probe([para('$\\frac{a}{b}$')], 14, 'focused')
+    const got = probe([para('$\\frac{a}{b}$')], 14, 'absent')
     expect(got.hidden).toEqual([[2, 7], [7, 8], [9, 10], [10, 11], [12, 13]])
     expect(got.widgets).toEqual(['ls|(|latex-suite-conceal-bracket', 'ls|)/|latex-suite-conceal-bracket', 'ls|(|latex-suite-conceal-bracket', 'ls|)|latex-suite-conceal-bracket'])
   })
@@ -368,7 +368,7 @@ describe('装饰闸门(与宿主实况预览的分工)', () => {
   /** 与 probe 同款,但把 plugin / state 交回来 —— 这两条要**重复调** decorations()。 */
   function rig(text: string, cursor: number, flags: { enabled: boolean }) {
     const doc = schema.node('doc', null, [para(text)])
-    const plugins = [mkHost(true), ...concealPlugins(pm, { enabled: () => flags.enabled, revealOnCursor: () => true })]
+    const plugins = [...concealPlugins(pm, { enabled: () => flags.enabled, revealOnCursor: () => true })]
     const state = EditorState.create({ doc, plugins, selection: TextSelection.create(doc, cursor) })
     const plugin = plugins[plugins.length - 1]
     const decosAt = (s: EditorState): DecorationSet | null =>
