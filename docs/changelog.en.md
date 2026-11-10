@@ -2,7 +2,7 @@
 
 [简体中文](../CHANGELOG.md)
 
-## 1.1.0
+## 1.1.0 — 2026-11-10
 
 - Snippets expand automatically inside paired math delimiters by default. Use the command palette to insert inline or block math. Automatic expansion in prose is opt-in.
 - Added a searchable snippet reference, a separate practice editor, and commands to pause automatic expansion, resume it, and restore a trigger after expansion.
