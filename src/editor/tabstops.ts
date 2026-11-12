@@ -190,11 +190,20 @@ export function createTabstops(pm: PmToolkit): TabstopApi {
     cycle: (view, dir) => {
       const st = key.getState(view.state)
       if (!st?.stack.length) return false
-      view.dispatch(view.state.tr.setMeta(key, { go: dir }))
-      const after = key.getState(view.state)
-      const top = after?.stack[after.stack.length - 1]
-      if (top) selectGroup(view, top)
-      return true
+      const current = view.state.selection
+      // A tabstop with the same selection is not a visible move. Skip coincident
+      // empty stops, as the upstream editor does. When the final frame ends,
+      // let this same Tab reach tabout instead of swallowing a motionless key.
+      for (;;) {
+        view.dispatch(view.state.tr.setMeta(key, { go: dir }))
+        const after = key.getState(view.state)
+        const top = after?.stack[after.stack.length - 1]
+        if (!top) return dir === -1
+        const r = top.groups[top.active]?.ranges[0]
+        if (!r || (r.from === current.from && r.to === current.to)) continue
+        selectGroup(view, top)
+        return true
+      }
     },
   }
 }
