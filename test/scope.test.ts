@@ -57,6 +57,16 @@ describe('scope: actual ProseMirror documents', () => {
     const r = rig('$@|$'); expect(r.type('a')).toBe(true); expect(r.text()).toBe('$\\alpha$')
     const empty = rig('$|$'); empty.type('@'); expect(empty.type('a')).toBe(true); expect(empty.text()).toBe('$\\alpha$')
   })
+  it.each(['$ps|$', '$$ps|$$', '$x+ps|$'])('expands Greek at a math boundary while preserving its prefix: %s', (source) => {
+    const r = rig(source)
+    expect(r.type('i')).toBe(true)
+    expect(r.text()).toBe(source.replace('ps|', '\\psi'))
+  })
+  it('expands upper-case Psi from the default Greek vocabulary', () => {
+    const r = rig('$Ps|$')
+    expect(r.type('i')).toBe(true)
+    expect(r.text()).toBe('$\\Psi$')
+  })
   it('does not consume a closing dollar as part of a math trigger', () => {
     const r = rig('$x|$', { snippets: [{ trigger: '$', replacement: 'BAD', options: 'mA' }] })
     expect(r.type('$')).toBe(false)

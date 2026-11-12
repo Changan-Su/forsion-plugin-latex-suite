@@ -124,8 +124,16 @@ describe('tabstop 跳位', () => {
     const e = mk('')
     e.expand(1, 1, '\\frac{$0}{$1}')
     e.tabstops.cycle(e.view, 1)
-    e.tabstops.cycle(e.view, 1)
+    expect(e.tabstops.cycle(e.view, 1)).toBe(false)
     expect(e.frames()).toHaveLength(0)
+  })
+
+  it('skips a coincident empty stop instead of consuming Tab without moving', () => {
+    const e = mk('')
+    e.expand(1, 1, 'x$0$1y$2')
+    expect(e.tabstops.cycle(e.view, 1)).toBe(true)
+    expect(e.state.selection.from).toBe(3)
+    expect(e.frames()[0].active).toBe(2)
   })
 
   it('没有活动片段时 cycle 返回 false(Tab 要还给宿主做列表缩进)', () => {

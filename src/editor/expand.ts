@@ -74,10 +74,21 @@ function findExpansion(
 
     const hit = matchSnippet(snippet, line, sel, bt.text.slice(bt.to))
     if (!hit) continue
-    const start = snippet.type === 'visual' ? bt.from : hit.triggerPos
+    let start = snippet.type === 'visual' ? bt.from : hit.triggerPos
+    let insert = hit.insert
     const end = bt.to + (hit.afterLength ?? 0)
     const span = sel ? original.span : ctx.span
-    // A match is not allowed to consume prose, a delimiter or a protected inline node.
+    // Imported snippets often capture the character before a command and put it
+    // back unchanged: ([^\\])(${GREEK}) -> [[0]]\\[[1]]. At the start of math
+    // that character is the opening dollar. Keep the unchanged prefix outside
+    // the edit instead of rejecting the whole match (or rewriting a delimiter).
+    if (span && start < span.innerFrom && snippet.type !== 'visual') {
+      const prefix = line.slice(start, span.innerFrom)
+      if (!insert.startsWith(prefix)) continue
+      start = span.innerFrom
+      insert = insert.slice(prefix.length)
+    }
+    // The actual replacement must remain entirely within the mathematical body.
     if (span && (start < span.innerFrom || end + typed.length - (bt.to - bt.from) > span.innerTo)) continue
     if (protectedRange(bt, start, end)) continue
 
@@ -90,12 +101,11 @@ function findExpansion(
       continue
     }
 
-    let insert = hit.insert
     if (ctx.mode.inlineMath && settings.removeSnippetWhitespace) insert = trimReplacementWhitespace(insert)
 
     // 触发串起点在**行坐标**里;文档坐标 = base + triggerPos。终点是光标(刚打的字还没进文档)。
     return {
-      from: bt.base + hit.triggerPos,
+      from: bt.base + start,
       to: bt.base + cursor + (hit.afterLength ?? 0),
       insert,
       enlarge: settings.autoEnlargeBrackets && settings.autoEnlargeBracketsTriggers.some((w) => insert.includes(w)),
