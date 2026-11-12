@@ -2,6 +2,11 @@
 
 [简体中文](../CHANGELOG.md)
 
+## 1.1.1 — 2026-11-12
+
+- Fix Greek snippet expansion at the start of a formula. Tab skips coincident empty stops and can leave the formula with the same keypress.
+- Add the missing Psi entry to the default Greek-letter snippets. Existing custom snippets and settings are preserved.
+
 ## 1.1.0 — 2026-11-10
 
 - Snippets expand automatically inside paired math delimiters by default. Use the command palette to insert inline or block math. Automatic expansion in prose is opt-in.
