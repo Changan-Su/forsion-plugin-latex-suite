@@ -9,7 +9,7 @@ import type { PmToolkit } from '../../types/forsion'
 import type { Snippet } from '../snippets/model'
 import { matchSnippet, onWordBoundary, shouldRunInMode, trimReplacementWhitespace } from '../snippets/model'
 import { parseTabstops } from '../snippets/tabstopParse'
-import { blockTextAt, mathBlockString, protectedRange, isCodeBlock, textSelectionAt } from './text'
+import { blockTextAt, inlineTextNodes, mathBlockString, protectedRange, isCodeBlock, textSelectionAt } from './text'
 import { mathContext } from './mathMode'
 import { toDocGroups, type TabstopApi, type Frame } from './tabstops'
 
@@ -88,6 +88,15 @@ function findExpansion(
       start = span.innerFrom
       insert = insert.slice(prefix.length)
     }
+    // A captured line break is also unchanged context, not part of the edit.
+    // Keep its host node (and attrs) intact so a row-start Greek trigger does
+    // not get rejected by the inline-atom protection below.
+    if (snippet.type !== 'visual') {
+      while (start < end && bt.text[start] === '\n' && insert.startsWith('\n')) {
+        start++
+        insert = insert.slice(1)
+      }
+    }
     // The actual replacement must remain entirely within the mathematical body.
     if (span && (start < span.innerFrom || end + typed.length - (bt.to - bt.from) > span.innerTo)) continue
     if (protectedRange(bt, start, end)) continue
@@ -124,7 +133,7 @@ export function createEngine(
   const apply = (view: EditorView, a: Attempt): void => {
     const parsed = parseTabstops(a.insert)
     let tr: Transaction = view.state.tr
-    if (parsed.text) tr.replaceWith(a.from, a.to, view.state.schema.text(parsed.text))
+    if (parsed.text) tr.replaceWith(a.from, a.to, inlineTextNodes(view.state.schema, parsed.text))
     else tr.delete(a.from, a.to)
 
     if (parsed.groups.length) {

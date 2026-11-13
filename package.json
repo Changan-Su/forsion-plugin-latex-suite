@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "verify": "npm run typecheck && npm run test && npm run build && npm run check",
     "test:ui": "node test/settingsUi/run.mjs",
-    "test:host": "node test/acceptance/electron.cjs"
+    "test:host": "node test/acceptance/electron.cjs",
+    "test:matrix": "node test/acceptance/matrix.cjs"
   },
   "devDependencies": {
     "@types/katex": "^0.16.8",

@@ -17,7 +17,7 @@
 
 By default, **Tab** tries manual expansion, tabstop navigation, matrix shortcuts, and tabout in that order. If none applies, the note handles **Tab**, for example to indent a list item. With **Space** as the manual trigger key, **Tab** starts with tabstop navigation.
 
-Block math can span lines within one text block. Outside matrix shortcut environments, use **Shift+Enter** for a newline in the source. In a matrix, **Enter** inserts `\\` to separate typeset rows. Delimiters in separate paragraphs do not form an equation.
+Block math can span lines within one text block. Outside matrix shortcut environments, use **Shift+Enter** for a newline in the source. In a matrix within multiline block math, **Enter** inserts `\\` and moves to a new source line, preserving indentation and leading `&` cells. Matrices in inline math keep single-line source. Matrix **Tab** checks brackets only on the current source line, so a later row's closing bracket cannot take over the column shortcut. Delimiters in separate paragraphs do not form an equation.
 
 ## Troubleshooting
 
