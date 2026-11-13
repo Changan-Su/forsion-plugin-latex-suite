@@ -2,6 +2,12 @@
 
 [简体中文](../CHANGELOG.md)
 
+## 1.1.2 — 2026-11-13
+
+- Enter in multiline `align`, matrix and cases environments now inserts `\\` and moves to a new source line, preserving indentation and leading alignment cells.
+- Fix Tab jumping to a closing bracket on a later row instead of inserting `&` on the current row.
+- Preserve source newlines in environment snippets, placeholder navigation and Greek expansion at the beginning of a new row.
+
 ## 1.1.1 — 2026-11-12
 
 - Fix Greek snippet expansion at the start of a formula. Tab skips coincident empty stops and can leave the formula with the same keypress.
