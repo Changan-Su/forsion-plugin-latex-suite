@@ -26,5 +26,6 @@
 
 - `npm run test:ui` 在独立的 Chromium 测试环境中验证设置面板。可用 `PW_HOST=/path/to/Forsion-Genesis/desktop/package.json` 指定已安装 `playwright-core` 的项目。运行前需安装 Playwright 的 Chromium。
 - `DESKTOP_DIR=/path/to/Forsion-Genesis/desktop npm run test:host` 使用实际构建的 Forsion Electron 桌面端，检查笔记输入、重启后的配置和设置面板截图。先构建插件和 Genesis 桌面端，确保 Electron 主进程、preload 及前端构建产物齐全。测试使用隔离的临时用户目录和笔记库。可用 `OUT_DIR` 指定截图和结果输出目录，或设置 `KEEP_STATE=1` 保留临时状态以便排查。
+- `DESKTOP_DIR=/path/to/Forsion-Genesis/desktop npm run test:matrix` 自起独立的浏览器台架，验证真实统一编辑器中的 `align` 换行、Tab 分列、片段占位点及保存重开。使用内存笔记库；`PLUGIN_DIR` 可指定旧插件包做负对照，`OUT_DIR` 可指定结果和截图目录。
 
 默认片段、变量和符号表源自 [Obsidian LaTeX Suite](https://github.com/artisticat1/obsidian-latex-suite)。上游 MIT 许可见 [LICENSE-upstream.md](LICENSE-upstream.md)。

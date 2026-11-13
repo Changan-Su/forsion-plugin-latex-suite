@@ -94,6 +94,19 @@ export function protectedRange(bt: BlockText, from = bt.from, to = bt.to): boole
   return blocked || marks.some((m) => ['code', 'inlineCode', 'amadeusEscaped'].includes(m.type.name)) || inInlineCode(bt.text, from)
 }
 
+/** Preserve source newlines as soft breaks in the host's inline node model.
+ * Literal newlines inside a text node can collapse during DOM/Markdown round trips.
+ * `isInline` tells Amadeus to serialize a bare newline rather than a Markdown `\\` break.
+ */
+export function inlineTextNodes(schema: EditorState['schema'], text: string): PmNode[] {
+  const br = schema.nodes?.hardbreak ?? schema.nodes?.hard_break ?? schema.nodes?.break
+  if (!br || !text.includes('\n')) return text ? [schema.text(text)] : []
+  return text.split('\n').flatMap((line, i) => [
+    ...(i ? [br.create({ isInline: true })] : []),
+    ...(line ? [schema.text(line)] : []),
+  ])
+}
+
 /** 在 textblock 内做一次替换,并把光标放到 caret(text 偏移)。返回事务,由调用方 dispatch。 */
 export function replaceInBlock(
   state: EditorState,
@@ -106,7 +119,7 @@ export function replaceInBlock(
   const tr = state.tr
   const a = bt.base + from
   const b = bt.base + to
-  if (insert) tr.replaceWith(a, b, state.schema.text(insert))
+  if (insert) tr.replaceWith(a, b, insert.includes('\n') ? inlineTextNodes(state.schema, insert) : state.schema.text(insert))
   else tr.delete(a, b)
   if (caret != null) {
     const p = Math.max(0, Math.min(tr.doc.content.size, bt.base + caret))

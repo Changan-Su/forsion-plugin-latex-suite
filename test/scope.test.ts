@@ -6,7 +6,7 @@ import { keymap } from 'prosemirror-keymap'
 import { InputRule, inputRules } from 'prosemirror-inputrules'
 import { createEngine } from '../src/editor/expand'
 import { createTabstops } from '../src/editor/tabstops'
-import { mathBlockString, setTextSelectionCtor } from '../src/editor/text'
+import { blockString, mathBlockString, setTextSelectionCtor } from '../src/editor/text'
 import { normalizeSnippets, parseSnippets, type RawSnippet } from '../src/snippets/parse'
 import { DEFAULT_SNIPPETS } from '../src/snippets/defaults'
 import { DEFAULT_SNIPPET_VARIABLES } from '../src/snippets/variables'
@@ -164,9 +164,37 @@ describe('scope: actual ProseMirror documents', () => {
   })
   it('matrix Enter adds a row, Shift+Enter exits to after matching end', () => {
     const r = rig('$$\n\\begin{pmatrix} a| \\end{pmatrix}\n$$', { hardbreak: true })
-    expect(matrixShortcut(r.view, 'Enter')).toBe(true); expect(r.text()).toContain(' \\\\ ')
+    expect(matrixShortcut(r.view, 'Enter')).toBe(true)
+    expect(blockString(r.view.state.doc.firstChild!)).toBe('$$\n\\begin{pmatrix} a \\\\\n \\end{pmatrix}\n$$')
+    expect(r.view.state.doc.childCount).toBe(1)
+    expect(blockString(r.view.state.selection.$from.parent).slice(0, r.view.state.selection.$from.parentOffset)).toBe('$$\n\\begin{pmatrix} a \\\\\n')
     expect(exitMatrix(r.view)).toBe(true)
     expect(r.view.state.doc.textBetween(1, r.view.state.selection.from)).toContain('\\end{pmatrix}')
+  })
+  it('keeps multiline environment snippets as break nodes and retains tabstops', () => {
+    const r = rig('$$ ali| $$')
+    r.type('g'); r.type('n')
+    expect(blockString(r.view.state.doc.firstChild!)).toBe('$$ \\begin{align}\n\n\\end{align} $$')
+    expect(r.tabs.hasActive(r.view.state)).toBe(true)
+    r.type('a')
+    expect(r.tabs.cycle(r.view, 1)).toBe(false)
+    expect(matrixShortcut(r.view, 'Tab')).toBe(true)
+    expect(blockString(r.view.state.doc.firstChild!)).toContain('\na & \n')
+  })
+  it('continues leading alignment cells and indentation on a new row', () => {
+    const r = rig('$$\n\\begin{align}\n  & a &= b|\n\\end{align}\n$$', { hardbreak: true })
+    expect(matrixShortcut(r.view, 'Enter')).toBe(true)
+    expect(blockString(r.view.state.doc.firstChild!)).toContain('  & a &= b \\\\\n  & \n')
+  })
+  it('expands a Greek command at the start of a source row without replacing its break', () => {
+    const r = rig('$$\n\\begin{align}\nalph|\n\\end{align}\n$$', { hardbreak: true })
+    expect(r.type('a')).toBe(true)
+    expect(blockString(r.view.state.doc.firstChild!)).toContain('\\begin{align}\n\\alpha\n')
+  })
+  it('limits matrix bracket tabout to the current source line', () => {
+    const r = rig('$$\n\\begin{align}\na|\nb)\n\\end{align}\n$$', { hardbreak: true })
+    expect(matrixShortcut(r.view, 'Tab')).toBe(true)
+    expect(blockString(r.view.state.doc.firstChild!)).toContain('\na & \nb)\n')
   })
   it('separates adjacent equation insertion', () => {
     const r = rig('$x$|'); expect(enterInlineMath(r.view)).toBe(true); expect(r.text()).toBe('$x$ $$')

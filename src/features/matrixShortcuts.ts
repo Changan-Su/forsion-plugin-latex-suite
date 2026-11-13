@@ -1,7 +1,7 @@
 // 矩阵快捷键:光标在 matrix / cases / align 这类环境里时,Tab 加一个单元格,Enter 换一行。
 //
-// Tab adds a cell; Enter inserts a LaTeX row separator. Hardbreaks within the
-// same textblock retain their positions. Shift+Enter exits a paired environment.
+// Multiline block math uses soft breaks within the same textblock, so both the
+// source and rendered equation advance a row. Inline math stays on one line.
 
 import type { EditorView } from 'prosemirror-view'
 import type { BlockText } from '../editor/text'
@@ -48,8 +48,14 @@ export function matrixShortcut(
   if (!allowed.includes(scope.name)) return false
 
   if (key === 'Enter') {
-    // 上游还会把行首的 `&` 数量复制到新行(`added_cells`)—— 那是为「另起一行」服务的缩进补偿,
-    // 我们不另起行,复制过来只会凭空多出对齐符。
+    if (m.ctx.mode.blockMath && m.bt.text.slice(m.innerFrom, m.innerTo).includes('\n')) {
+      const lineStart = m.bt.text.lastIndexOf('\n', m.pos - 1) + 1
+      const line = m.bt.text.slice(lineStart, m.pos)
+      // Keep indentation and leading alignment cells, rather than copying all
+      // separators in a row (which would add unwanted columns).
+      const leading = line.match(/^[\t ]*(?:&[\t ]*)*/)?.[0] ?? ''
+      return insertAt(view, m.bt, ' \\\\\n' + leading)
+    }
     return insertAt(view, m.bt, ' \\\\ ')
   }
 
@@ -57,7 +63,10 @@ export function matrixShortcut(
   // (`\begin{pmatrix} (a|b) & c`),Tab 的意思是「跳出这对括号」,不是「开新单元格」。
   // 这一步不能挪到外面靠 tabout 兜底:`}` 在 tabout 的默认右定界符名单里,完整 tabout 会把
   // `\begin{…}` 环境里的每一次 Tab 都劫走。
-  const rel = taboutByEnclosedBrackets(m.bt.text.slice(m.pos, m.innerTo), opts.closingSymbols)
+  // Like upstream, only look along this source line. A later row's closing
+  // bracket must not turn the current row's column shortcut into a jump.
+  const lineEnd = m.bt.text.indexOf('\n', m.pos)
+  const rel = taboutByEnclosedBrackets(m.bt.text.slice(m.pos, lineEnd < 0 ? m.innerTo : Math.min(lineEnd, m.innerTo)), opts.closingSymbols)
   if (rel !== null) {
     setCursorInBlock(view, m.bt, m.pos + rel)
     return true

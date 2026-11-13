@@ -26,5 +26,6 @@ Run `npm ci` to install dependencies and `npm run verify` to type-check, test, b
 
 - `npm run test:ui` checks the settings panel in a standalone Chromium harness. Set `PW_HOST=/path/to/Forsion-Genesis/desktop/package.json` to point to a project with `playwright-core` installed. The harness requires Playwright's Chromium.
 - `DESKTOP_DIR=/path/to/Forsion-Genesis/desktop npm run test:host` runs note editing, restart, and screenshot checks in the actual Forsion Electron build. Build the plugin and Genesis desktop first so the Electron main process, preload, and frontend assets are available. The harness uses a temporary user directory and vault. Set `OUT_DIR` to choose where results and screenshots go, or `KEEP_STATE=1` to retain the temporary state for debugging.
+- `DESKTOP_DIR=/path/to/Forsion-Genesis/desktop npm run test:matrix` starts an isolated browser harness and checks `align` source newlines, Tab columns, snippet tabstops, and save/reopen behavior in the real unified editor. The vault stays in memory. Set `PLUGIN_DIR` to an older plugin bundle for a negative control and `OUT_DIR` for results and screenshots.
 
 The default snippets, variables, and symbol maps come from [Obsidian LaTeX Suite](https://github.com/artisticat1/obsidian-latex-suite). See [LICENSE-upstream.md](LICENSE-upstream.md) for the upstream MIT license.
