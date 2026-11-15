@@ -66,6 +66,26 @@ describe('bracket colors (upstream depth cycle)', () => {
     // `{` 里漏了 `)` → `(` 标红,外层 `{}` 照样配上。
     expect(paint('{ ( a }')).toEqual(['{:0', '(:x', '}:0'])
   })
+  it('arrow commands that start with \\left / \\right are not delimiters', () => {
+    expect(paint('a \\rightarrow b')).toEqual([])
+    expect(paint('A \\leftrightarrow B')).toEqual([])
+    expect(paint('{a \\leftarrow b}')).toEqual(['{:0', '}:0'])
+    expect(paint('\\left( a \\rightarrow b \\right)')).toEqual(['\\left(:0', '\\right):0'])
+    expect(paint('\\left\\{ x \\mid x \\rightarrow 0 \\right\\}')).toEqual(['\\left\\{:0', '\\right\\}:0'])
+    expect(paint('\\lefteqn{a}')).toEqual(['{:0', '}:0'])
+    expect(cursorOn('\\left( a| \\rightarrow b \\right)')).toBe('\\left(@0…\\right)@23')
+  })
+  it('thousands of nested or unmatched brackets neither overflow the stack nor go quadratic', () => {
+    for (const math of ['('.repeat(100000), '{'.repeat(50000) + 'x' + '}'.repeat(50000), '(a,b] '.repeat(20000), '\\left( '.repeat(20000)]) {
+      const t0 = Date.now()
+      const nodes = bracketTree(math, 0, math.length)
+      let n = 0
+      for (const _ of walkBrackets(nodes)) n++
+      expect(n).toBeGreaterThan(0)
+      expect(cursorPair(nodes, 1, 1) === undefined).toBe(false)
+      expect(Date.now() - t0).toBeLessThan(1500)
+    }
+  })
   it('escaped dollars, comments and other control symbols are not brackets', () => {
     expect(paint('a % ( b\n c')).toEqual([])
     expect(paint('\\\\ \\, x')).toEqual([])
@@ -129,6 +149,11 @@ describe('bracket plugin decorations', () => {
       // 着色照常,光标那一对没有可画的。
       expect(plugins.flatMap((p) => (p.props.decorations!.call(p, state) as DecorationSet).find())).toHaveLength(2)
     }
+  })
+  it('a formula with thousands of open braces still lets the editor start', () => {
+    const d = schema.node('doc', null, [schema.node('paragraph', null, [schema.text('$$' + '{'.repeat(10000) + 'x$$')])])
+    const plugins = bracketPlugins(pm, { highlight: () => true, colorize: () => true })
+    expect(() => EditorState.create({ schema, doc: d, plugins, selection: TextSelection.create(d, 5000) })).not.toThrow()
   })
   it('code blocks are left alone', () => {
     expect(run(doc([['code_block', '$(a)$']]), 3)).toEqual([])

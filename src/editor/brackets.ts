@@ -93,106 +93,136 @@ function isDelimiter(s: string): boolean {
 
 type Ctx = 'brace' | 'bracket' | 'left'
 
-type Spec =
-  | { kind: 'group'; open: Tok; close: Tok; children: Spec[] }
-  | { kind: 'open'; tok: Tok }
-  | { kind: 'close'; tok: Tok }
-  | { kind: 'bad'; tok: Tok }
+// ⚠️`\right` / `\left` 后面必须**不是字母**:tokenizeMath 已把 `\right)` 合成一个 token,而 `\rightarrow`、
+// `\leftarrow`、`\lefteqn` 是另一条命令。曾经用 startsWith 判:箭头全被当成定界符,单独出现标红、
+// 在 `\left( … \right)` 里抢走配对。裸的 `\left` / `\right`(后面没跟定界符)也不算。
+const RIGHT_DELIM = /^\\right(?![A-Za-z])/
+const LEFT_DELIM = /^\\left(?![A-Za-z])/
 
 function closerOf(t: Tok): Ctx | null {
   if (t.text === '}') return 'brace'
   if (t.text === ']') return 'bracket'
-  if (t.text.startsWith('\\right') && t.text !== '\\right') return 'left'
+  if (t.text !== '\\right' && RIGHT_DELIM.test(t.text)) return 'left'
   return null
 }
 function openerOf(t: Tok): Ctx | null {
   if (t.text === '{') return 'brace'
   if (t.text === '[') return 'bracket'
-  if (t.text.startsWith('\\left') && t.text !== '\\left') return 'left'
+  if (t.text !== '\\left' && LEFT_DELIM.test(t.text)) return 'left'
   return null
-}
-
-/** 结构括号一层层往下配;返回这一层的序列。没配上的结构左括号标红,它后面的内容留在本层。 */
-function parse(toks: Tok[], i: number, ctx: Ctx[]): { specs: Spec[]; i: number; closer: Tok | null } {
-  const specs: Spec[] = []
-  const want = ctx[ctx.length - 1]
-  while (i < toks.length) {
-    const t = toks[i]
-    const closes = closerOf(t)
-    if (closes) {
-      if (closes === want) return { specs, i: i + 1, closer: t }
-      // 外层在等它 → 本层到此为止(本层的左括号没配上),交给外层收。
-      if (ctx.includes(closes)) return { specs, i, closer: null }
-      specs.push({ kind: 'bad', tok: t })
-      i++
-      continue
-    }
-    const opens = openerOf(t)
-    if (opens) {
-      const r = parse(toks, i + 1, [...ctx, opens])
-      if (r.closer) specs.push({ kind: 'group', open: t, close: r.closer, children: r.specs })
-      else specs.push({ kind: 'bad', tok: t }, ...r.specs)
-      i = r.i
-      continue
-    }
-    if (COMMAND_PAIRS[t.text]) specs.push({ kind: 'open', tok: t })
-    else if (COMMAND_OPEN_OF[t.text]) specs.push({ kind: 'close', tok: t })
-    i++
-  }
-  return { specs, i, closer: null }
 }
 
 export type BracketNode =
   | { kind: 'pair'; open: Tok; close: Tok; children: BracketNode[] }
   | { kind: 'mismatched'; tok: Tok; children: BracketNode[] }
 
-/** 同一层里的非结构括号按栈配(上游 pairBrackets):右括号找最近的同类左括号,
- *  中间没配上的左括号原样留着(标红),它们之后的内容挂在它们下面、不算一层。 */
-function pairLevel(specs: Spec[]): BracketNode[] {
-  const top: BracketNode[] = []
-  type Open = { node: BracketNode & { kind: 'mismatched' }; parent: Open | null; text: string }
-  let parent: Open | null = null
-  const stack: Open[] = []
-  for (const s of specs) {
-    const children = parent ? parent.node.children : top
-    if (s.kind === 'open') {
-      const o: Open = { node: { kind: 'mismatched', tok: s.tok, children: [] }, parent, text: s.tok.text }
-      children.push(o.node)
-      stack.push(o)
-      parent = o
-    } else if (s.kind === 'close') {
-      const want = COMMAND_OPEN_OF[s.tok.text]
-      let idx = -1
-      for (let k = stack.length - 1; k >= 0; k--) if (stack[k].text === want) { idx = k; break }
-      if (idx < 0) {
-        children.push({ kind: 'mismatched', tok: s.tok, children: [] })
-        continue
+// 下面全是显式栈的迭代实现。⚠️别改回递归:曾经 parse / 配对 / 遍历都是递归,单条公式里几千层
+// 嵌套或没配上的左括号就爆栈(init 里抛 = 编辑器起不来),到那之前耗时也按平方涨。
+
+/** 第一遍:结构括号(`{}`、`[]`、`\left \right`)怎么配。返回 match[i] = 配上的另一端下标,
+ *  -1 = 没配上(标红)。规则:右括号先找栈顶;栈顶不是同类、但更外层有同类在等 → 中间那些
+ *  没收口的左括号都算没配上,由外层收;谁也不等它 → 它自己没配上。 */
+function matchStructural(toks: Tok[]): Int32Array {
+  const match = new Int32Array(toks.length).fill(-1)
+  const stack: Array<{ ctx: Ctx; i: number }> = []
+  const waiting: Record<Ctx, number> = { brace: 0, bracket: 0, left: 0 }
+  for (let i = 0; i < toks.length; i++) {
+    const t = toks[i]
+    const closes = closerOf(t)
+    if (closes) {
+      if (!waiting[closes]) continue
+      for (;;) {
+        const top = stack.pop()!
+        waiting[top.ctx]--
+        if (top.ctx === closes) {
+          match[top.i] = i
+          match[i] = top.i
+          break
+        }
       }
-      const o = stack[idx]
-      stack.length = idx
-      const paired = o.node as unknown as BracketNode & { kind: 'pair' }
-      Object.assign(paired, { kind: 'pair', open: o.node.tok, close: s.tok })
-      delete (paired as unknown as { tok?: Tok }).tok
-      parent = o.parent
-    } else if (s.kind === 'group') {
-      children.push({ kind: 'pair', open: s.open, close: s.close, children: pairLevel(s.children) })
-    } else {
-      children.push({ kind: 'mismatched', tok: s.tok, children: [] })
+      continue
     }
+    const opens = openerOf(t)
+    if (opens) {
+      stack.push({ ctx: opens, i })
+      waiting[opens]++
+    }
+  }
+  return match
+}
+
+/** 一段公式正文里的括号树(textblock 文本坐标)。
+ *  第二遍:配上的结构括号开一层;同一层里 `( )` 与 `\{ \}` 这类命令括号按栈配(上游 pairBrackets):
+ *  右括号找最近的同类左括号,中间没配上的左括号原样留着(标红),它们之后的内容挂在它们下面、不算一层。
+ *  没配上的结构左括号不开层,它里面的东西留在本层一起配。 */
+export function bracketTree(text: string, from: number, to: number): BracketNode[] {
+  const toks = tokenizeMath(text, from, to)
+  const match = matchStructural(toks)
+  type Open = { node: BracketNode & { kind: 'mismatched' }; cur: BracketNode[] }
+  type Level = { cur: BracketNode[]; opens: Open[]; byText: Map<string, number[]> }
+  const top: BracketNode[] = []
+  const levels: Level[] = [{ cur: top, opens: [], byText: new Map() }]
+  for (let i = 0; i < toks.length; i++) {
+    const t = toks[i]
+    const level = levels[levels.length - 1]
+    if (closerOf(t) || openerOf(t)) {
+      const m = match[i]
+      if (m < 0) {
+        level.cur.push({ kind: 'mismatched', tok: t, children: [] })
+      } else if (m > i) {
+        const node: BracketNode = { kind: 'pair', open: t, close: toks[m], children: [] }
+        level.cur.push(node)
+        levels.push({ cur: node.children, opens: [], byText: new Map() })
+      } else {
+        levels.pop() // 本层收口;层里没配上的命令左括号保持标红
+      }
+      continue
+    }
+    if (COMMAND_PAIRS[t.text]) {
+      const node: BracketNode & { kind: 'mismatched' } = { kind: 'mismatched', tok: t, children: [] }
+      level.cur.push(node)
+      const list = level.byText.get(t.text) ?? []
+      list.push(level.opens.length)
+      level.byText.set(t.text, list)
+      level.opens.push({ node, cur: level.cur })
+      level.cur = node.children
+      continue
+    }
+    const want = COMMAND_OPEN_OF[t.text]
+    if (!want) continue
+    const list = level.byText.get(want)
+    if (!list || !list.length) {
+      level.cur.push({ kind: 'mismatched', tok: t, children: [] })
+      continue
+    }
+    const idx = list[list.length - 1]
+    const o = level.opens[idx]
+    // 弹掉 idx 及以上的左括号(它们在各自文字的列表里都排在最后)。
+    for (let k = level.opens.length - 1; k >= idx; k--) level.byText.get(level.opens[k].node.tok.text)!.pop()
+    level.opens.length = idx
+    const opened = o.node.tok
+    const paired = o.node as unknown as { kind: string; open?: Tok; close?: Tok; tok?: Tok }
+    paired.kind = 'pair'
+    paired.open = opened
+    paired.close = t
+    delete paired.tok
+    level.cur = o.cur
   }
   return top
 }
 
-/** 一段公式正文里的括号树(textblock 文本坐标)。 */
-export function bracketTree(text: string, from: number, to: number): BracketNode[] {
-  return pairLevel(parse(tokenizeMath(text, from, to), 0, []).specs)
-}
-
 /** 先序遍历,配上的那一对往里一层深度 +1(上游 walkPairedBrackets)。 */
 export function* walkBrackets(nodes: BracketNode[], depth = 0): Generator<{ node: BracketNode; depth: number }> {
-  for (const node of nodes) {
-    yield { node, depth }
-    yield* walkBrackets(node.children, node.kind === 'pair' ? depth + 1 : depth)
+  const stack: Array<{ nodes: BracketNode[]; i: number; depth: number }> = [{ nodes, i: 0, depth }]
+  while (stack.length) {
+    const frame = stack[stack.length - 1]
+    if (frame.i >= frame.nodes.length) {
+      stack.pop()
+      continue
+    }
+    const node = frame.nodes[frame.i++]
+    yield { node, depth: frame.depth }
+    if (node.children.length) stack.push({ nodes: node.children, i: 0, depth: node.kind === 'pair' ? frame.depth + 1 : frame.depth })
   }
 }
 
