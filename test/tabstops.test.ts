@@ -4,6 +4,7 @@
 // tabstop 的全部难点都在「文档改了之后位置怎么跟」——那只有让真的 Transaction 跑过才现形。
 // 头一版就栽在这:范围变非空后偏置翻转,第二个字落到范围外,整帧被收尾条件弹掉,
 // 表现是「Tab 跳一次就失灵」,而单测全绿。
+// 语义(平铺组表、选区变化重算下标、到最后一组清表)照上游,逐键对照见 obsidianParity.test.ts。
 import { describe, expect, it } from 'vitest'
 import { EditorState, Plugin, PluginKey, Selection, TextSelection, NodeSelection, type Transaction } from 'prosemirror-state'
 import { Schema, Slice, Fragment } from 'prosemirror-model'
@@ -69,37 +70,38 @@ function mk(text: string) {
       return groups
     },
     text() { return state.doc.textBetween(0, state.doc.content.size, '\n') },
-    frames() { return tabstops.key.getState(state)?.stack ?? [] },
+    st() { return tabstops.key.getState(state)! },
+    groupText(i: number) { const g = tabstops.key.getState(state)!.groups[i]; return g ? state.doc.textBetween(g.ranges[0].from, g.ranges[0].to) : null },
   }
 }
 
 describe('tabstop 位置映射', () => {
-  it('连打多个字符,帧不掉(头一版就死在这)', () => {
+  it('连打多个字符,格不掉(头一版就死在这)', () => {
     const e = mk('')
-    e.expand(1, 1, '\\frac{$0}{$1}')
+    e.expand(1, 1, '\\frac{$0}{$1}$2')
     expect(e.text()).toBe('\\frac{}{}')
-    const stop = e.frames()[0].groups[0].ranges[0]
+    const stop = e.st().groups[0].ranges[0]
 
     e.type(stop.from, 'abc')
 
     expect(e.text()).toBe('\\frac{abc}{}')
-    expect(e.frames()).toHaveLength(1) // ← 修之前:打到第二个字就变 0
-    const g = e.frames()[0].groups[0].ranges[0]
-    expect(e.state.doc.textBetween(g.from, g.to)).toBe('abc')
+    expect(e.st().groups).toHaveLength(3) // ← 修之前:打到第二个字就变 0
+    expect(e.groupText(0)).toBe('abc')
   })
 
-  it('紧邻的两个空位点:在前一个里打字不会撑开后一个', () => {
+  it('紧邻的两个空位点:两端都向外长(上游 inclusive),Tab 跳过与光标重合的那一组', () => {
     const e = mk('')
-    e.expand(1, 1, 'x$0$1y')
-    const [g0, g1] = e.frames()[0].groups
-    expect(g0.ranges[0].from).toBe(g1.ranges[0].from) // 起点相同 = 真的紧邻
+    e.expand(1, 1, 'x$0$1y$2')
+    const [g0, g1] = e.st().groups
+    expect(g0.ranges[0].from).toBe(g1.ranges[0].from)
 
     e.type(g0.ranges[0].from, 'AB')
 
-    const after = e.frames()[0].groups
-    expect(e.state.doc.textBetween(after[0].ranges[0].from, after[0].ranges[0].to)).toBe('AB')
-    expect(after[1].ranges[0].from).toBe(after[1].ranges[0].to) // 后一个仍是空位点
-    expect(after[1].ranges[0].from).toBe(after[0].ranges[0].to) // 且排在打进去的字后面
+    expect(e.groupText(0)).toBe('AB')
+    expect(e.groupText(1)).toBe('AB')
+    expect(e.tabstops.cycle(e.view, 1)).toBe(true)
+    expect(e.state.selection.from).toBe(e.text().indexOf('y') + 2)
+    expect(e.tabstops.hasActive(e.state)).toBe(false) // 落到最后一组 = 清表
   })
 
   it('带默认值的位点:落上去是整段选中,打字即替换', () => {
@@ -109,31 +111,38 @@ describe('tabstop 位置映射', () => {
     const sel = e.state.selection
     expect(e.state.doc.textBetween(sel.from, sel.to)).toBe('2')
   })
+
+  it('格前面那一个字被换掉(自动放大括号把 ) 换成 \\right)):紧贴在它前面的空格不丢', () => {
+    const e = mk('')
+    e.expand(1, 1, '($0)$1')
+    e.view.dispatch(e.state.tr.replaceWith(2, 3, schema.text(' \\right)')))
+    expect(e.text()).toBe('( \\right)')
+    expect(e.st().groups.map((g) => g.ranges[0].from)).toEqual([2, 10])
+  })
 })
 
 describe('tabstop 跳位', () => {
   it('Tab 依次走到下一组', () => {
     const e = mk('')
-    e.expand(1, 1, '\\frac{$0}{$1}')
-    expect(e.frames()[0].active).toBe(0)
+    e.expand(1, 1, '\\frac{$0}{$1}$2')
+    expect(e.st().index).toBe(0)
     expect(e.tabstops.cycle(e.view, 1)).toBe(true)
-    expect(e.frames()[0].active).toBe(1)
+    expect(e.st().index).toBe(1)
   })
 
-  it('跳过最后一组 = 片段收尾,栈清空', () => {
+  it('落到最后一组 = 清表,下一次 Tab 不再归占位跳转', () => {
     const e = mk('')
     e.expand(1, 1, '\\frac{$0}{$1}')
-    e.tabstops.cycle(e.view, 1)
+    expect(e.tabstops.cycle(e.view, 1)).toBe(true)
+    expect(e.tabstops.hasActive(e.state)).toBe(false)
     expect(e.tabstops.cycle(e.view, 1)).toBe(false)
-    expect(e.frames()).toHaveLength(0)
   })
 
-  it('skips a coincident empty stop instead of consuming Tab without moving', () => {
+  it('只有一个 $0 的片段(mk / dm)展开后不留表,不多吃一次 Tab', () => {
     const e = mk('')
-    e.expand(1, 1, 'x$0$1y$2')
-    expect(e.tabstops.cycle(e.view, 1)).toBe(true)
-    expect(e.state.selection.from).toBe(3)
-    expect(e.frames()[0].active).toBe(2)
+    e.expand(1, 1, '$$0$')
+    expect(e.tabstops.hasActive(e.state)).toBe(false)
+    expect(e.tabstops.cycle(e.view, 1)).toBe(false)
   })
 
   it('没有活动片段时 cycle 返回 false(Tab 要还给宿主做列表缩进)', () => {
@@ -141,36 +150,48 @@ describe('tabstop 跳位', () => {
     expect(e.tabstops.cycle(e.view, 1)).toBe(false)
   })
 
-  it('Shift-Tab 从第一组往回 = 退出', () => {
+  it('Shift-Tab 在第一组:不接、表原样保留(上游交还编辑器)', () => {
     const e = mk('')
-    e.expand(1, 1, '\\frac{$0}{$1}')
-    expect(e.tabstops.cycle(e.view, -1)).toBe(true)
-    expect(e.frames()).toHaveLength(0)
+    e.expand(1, 1, '\\frac{$0}{$1}$2')
+    expect(e.tabstops.cycle(e.view, -1)).toBe(false)
+    expect(e.tabstops.hasActive(e.state)).toBe(true)
+    expect(e.st().index).toBe(0)
+  })
+
+  it('一个格展开出嵌套片段:新组替换当前组,外层其余的格排在后面', () => {
+    const e = mk('')
+    e.expand(1, 1, '($0)$1')
+    e.expand(2, 2, '{$0}$1')
+    expect(e.text()).toBe('({})')
+    expect(e.st().groups.map((g) => [g.ranges[0].from, g.color])).toEqual([[3, 1], [4, 1], [5, 0]])
   })
 })
 
 describe('tabstop 收尾条件', () => {
-  it('光标离开全部位点 → 整栈作废', () => {
+  it('光标离开全部位点 → 清表', () => {
     const e = mk('尾巴')
-    e.expand(1, 1, '\\frac{$0}{$1}')
-    expect(e.frames()).toHaveLength(1)
+    e.expand(1, 1, '\\frac{$0}{$1}$2')
+    expect(e.tabstops.hasActive(e.state)).toBe(true)
     const tr = e.state.tr.setSelection(TextSelection.create(e.state.doc, e.state.doc.content.size - 1))
     e.view.dispatch(tr)
-    expect(e.frames()).toHaveLength(0)
+    expect(e.tabstops.hasActive(e.state)).toBe(false)
+    expect(e.st().color).toBe(0)
   })
 
-  it('位点所在文本被整段删掉 → 帧自己消失', () => {
+  it('位点所在文本被整段删掉 → 格自己消失', () => {
     const e = mk('')
-    e.expand(1, 1, '\\frac{$0}{$1}')
-    e.view.dispatch(e.state.tr.delete(1, e.state.doc.content.size - 1))
-    expect(e.frames()).toHaveLength(0)
+    e.expand(1, 1, '\\frac{$0}{$1}$2')
+    // 编辑器里的删除会把光标放回删除点(选区事务),这时重算下标:剩下的格包不住光标 / 只剩一组 → 清表。
+    const tr = e.state.tr.delete(1, e.state.doc.content.size - 1)
+    e.view.dispatch(tr.setSelection(TextSelection.create(tr.doc, 1)))
+    expect(e.tabstops.hasActive(e.state)).toBe(false)
   })
 
   it('clear meta 立刻退出(Esc)', () => {
     const e = mk('')
-    e.expand(1, 1, '\\frac{$0}{$1}')
+    e.expand(1, 1, '\\frac{$0}{$1}$2')
     e.view.dispatch(e.state.tr.setMeta(e.tabstops.key, { clear: true }))
-    expect(e.frames()).toHaveLength(0)
+    expect(e.tabstops.hasActive(e.state)).toBe(false)
   })
 })
 
@@ -179,7 +200,7 @@ describe('同名位点镜像(ProseMirror 没有多光标,这是替代方案)', (
   it('在主位点打字,同组另一个位点跟着变', () => {
     const e = mk('')
     e.expand(1, 1, '\\begin{$0}\n$1\n\\end{$0}')
-    const g0 = e.frames()[0].groups[0]
+    const g0 = e.st().groups[0]
     expect(g0.ranges).toHaveLength(2)
 
     e.type(g0.ranges[0].from, 'align')
@@ -189,11 +210,11 @@ describe('同名位点镜像(ProseMirror 没有多光标,这是替代方案)', (
     expect(e.text()).toContain('\\end{align}')
   })
 
-  it('镜像不会无限递归(自己补的那一笔带 meta,不再触发)', () => {
+  it('镜像不会无限递归(自己补的那一笔带 meta,不再触发);只有一组时清表后照样联动', () => {
     const e = mk('')
     e.expand(1, 1, 'A$0B$0C')
-    const g = e.frames()[0].groups[0]
-    e.type(g.ranges[0].from, 'x')
+    expect(e.tabstops.hasActive(e.state)).toBe(false)
+    e.type(2, 'x')
     expect(e.text()).toBe('AxBxC')
   })
 })

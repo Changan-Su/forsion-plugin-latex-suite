@@ -1,45 +1,80 @@
 // Tabstop:片段展开后用 Tab 在占位点之间跳。
 //
-// 与上游最大的一处**必要**分歧:CodeMirror 支持多光标,同下标的 tabstop 出现两次(`\begin{$0}…\end{$0}`)
-// 就是两个光标同时打字。ProseMirror **没有多选区** —— 这里换成「镜像」:主位点(光标所在那个)
-// 的文本在每次事务后同步到同组其它位点。用户看到的效果一样(改环境名两头一起变),而且比多光标更稳
-// (光标只有一个,不会出现「另一个光标飘到别处」的诡异态)。
+// 状态机逐条照上游 obsidian-latex-suite(snippets/codemirror/tabstops_state_field.ts 与
+// snippets/snippet_management.ts),这是本文件唯一的口径:
 //
-// 位置存活靠 tr.mapping —— 与仓里 headingFold.ts 同一条路子:锚随事务映射,失效即淘汰。
+//  ① **平铺的组表 + 一个下标**(不是栈)。片段里再展开片段时,新片段的组**替换掉当前组**
+//     (`splice(index, 1, ...新组)`):当前格被新片段占了,外层其余的格原样排在后面。
+//     ⚠️曾经写成「片段栈」:外层帧的当前格会随打字长成整段嵌套内容,里层走完后 Tab 把那一整段
+//     选中 —— 用户看到的就是「连按两次 Tab 把一段内容选中了」。别再改回栈。
+//  ② **每次选区变化都重算下标** = 第一个包住选区的组(两端都算包住);一个都不包 = 表长。
+//     鼠标点进后面的格、方向键挪出格,下标都跟着走。
+//  ③ 重算后表里只剩一组,或者下标已经到最后一组(含「哪个都不包」),**整表清空**(颜色计数归零)。
+//     所以最后一格永远不会被画出来、也不会随输入无限长大;`mk` / `dm` 这类只有一个 `$0` 的片段
+//     展开后表就是空的,不会多吃一次 Tab。
+//  ④ Tab = 下一组:目标组包住当前选区就把光标放到它的末端,否则选中整格(空格就是放光标);
+//     落点与当前选区相同就再往后找。找不到就返回 false,让这次 Tab 去做矩阵 / 跳出公式。
+//     Shift+Tab 对称;第一组再往前 = 返回 false 交还编辑器,表原样保留。
+//  ⑤ 位置映射:所有格两端都向外长(上游 mark 的 inclusive),紧贴格边的输入都算进格里。
+//     空格只在被一次删除「跨过去」时才淘汰(上游 MapMode.TrackDel)。
+//     ⚠️曾经用「两端都落在删除里就淘汰」判空格:自动放大括号把 `)` 换成 ` \right)` 时,
+//     紧贴在 `)` 前面的那个空格(`//` 的 `$2`)被误判成删掉了,分式后面那一格凭空消失。
+//  ⑥ 画法:只有表里第一组不画(上游 `tabstopGroups[0].hideFromEditor()`),其余有字的格画底色框,
+//     空格画一根零宽点线。颜色是**每次展开**取一个计数(0/1/2 轮换),清空时归零 —— 不是嵌套深度。
+//
+// 与上游唯一的**必要**分歧:CodeMirror 支持多光标,同下标的 tabstop 出现两次(`\begin{$0}…\end{$0}`)
+// 就是两个光标同时打字。ProseMirror **没有多选区** —— 这里换成「镜像」:光标所在那一处的文本在
+// 每次事务后同步到同组其它位点。上游清表后多光标还在,所以这里清表时如果当前组有多处,
+// 留一份「镜像余组」(不画、不参与跳位),光标离开它之前继续联动。
 
 import type { EditorState, Plugin, PluginKey, Transaction } from 'prosemirror-state'
 import type { DecorationSet, EditorView } from 'prosemirror-view'
 import type { PmToolkit } from '../../types/forsion'
 import type { TabstopGroup } from '../snippets/tabstopParse'
 
+export interface Range {
+  from: number
+  to: number
+}
+
+/** 展开片段时交给 push 的组(文档坐标)。 */
 export interface DocGroup {
   index: number
   /** 文档坐标。 */
-  ranges: Array<{ from: number; to: number }>
+  ranges: Range[]
 }
 
-export interface Frame {
-  groups: DocGroup[]
-  /** 当前停在第几组(groups 的数组下标)。 */
-  active: number
+export interface Group {
+  ranges: Range[]
+  /** 0/1/2:哪一次展开建的(决定画什么颜色)。 */
+  color: number
+  /** 上游的 hidden:表里第一组在第一次选区变化后不再画。 */
+  hidden: boolean
 }
 
-export interface TabstopState {
-  /** 片段栈:片段里再展开片段时压栈,收尾时弹出(上游同款嵌套语义)。 */
-  stack: Frame[]
+export interface TabstopSnapshot {
+  groups: Group[]
+  index: number
+  /** 下一次展开用的颜色计数。 */
+  color: number
+  /** 清表时留下的同名多处位点,只做镜像。 */
+  mirror: Range[] | null
+}
+
+export interface TabstopState extends TabstopSnapshot {
   decos: DecorationSet
 }
 
 export interface TabstopApi {
   plugin: Plugin
-  key: PluginKey
-  /** 展开完一个片段后压栈并选中第一个 tabstop。groups 用**文档坐标**。 */
+  key: PluginKey<TabstopState>
+  /** 展开完一个片段后把它的组插进表里(替换当前组)。groups 用**文档坐标**;调用方自己设选区。 */
   push(tr: Transaction, groups: DocGroup[]): Transaction
-  /** Tab / Shift-Tab。返回 false 表示没有活动片段,调用方应放行给宿主(列表缩进等)。 */
+  /** Tab / Shift-Tab。返回 false = 这次按键不归占位跳转管,调用方继续往下交。 */
   cycle(view: EditorView, dir: 1 | -1): boolean
   hasActive(state: EditorState): boolean
-  snapshot(state: EditorState): Frame[]
-  restore(tr: Transaction, stack: Frame[]): Transaction
+  snapshot(state: EditorState): TabstopSnapshot
+  restore(tr: Transaction, snap: TabstopSnapshot): Transaction
 }
 
 /** 从解析结果 + 插入基址算出文档坐标的 group。 */
@@ -47,99 +82,130 @@ export function toDocGroups(groups: TabstopGroup[], base: number): DocGroup[] {
   return groups.map((g) => ({ index: g.index, ranges: g.ranges.map((r) => ({ from: base + r.from, to: base + r.to })) }))
 }
 
-const CLASS = 'latex-suite-tabstop'
+/** 与上游类名一致,便于对照两边的 DOM。 */
+export const PLACEHOLDER_CLASS = 'latex-suite-snippet-placeholder'
+/** 空格的零宽点线(上游 `.cm-snippetFieldPosition`,这里不是 CodeMirror,换个前缀)。 */
+export const FIELD_CLASS = 'latex-suite-snippet-field'
+const N_COLORS = 3
+
+const EMPTY: TabstopSnapshot = { groups: [], index: 0, color: 0, mirror: null }
+
+/** 选区 [from, to] 是否落在某一处位点里(两端都算)—— 上游 containsSelection。 */
+function groupContains(g: { ranges: Range[] }, from: number, to: number): boolean {
+  return g.ranges.some((r) => r.from <= from && r.to >= to)
+}
+
+/** 第一个包住选区的组;一个都不包 = 表长(上游 getCurrentTabstopGroupIndex)。 */
+function currentIndex(groups: Group[], from: number, to: number): number {
+  for (let i = 0; i < groups.length; i++) if (groupContains(groups[i], from, to)) return i
+  return groups.length
+}
 
 export function createTabstops(pm: PmToolkit): TabstopApi {
   const key = new pm.PluginKey<TabstopState>('LATEX_SUITE_TABSTOPS')
 
-  const build = (doc: Parameters<typeof pm.DecorationSet.create>[0], stack: Frame[]): DecorationSet => {
+  const build = (doc: Parameters<typeof pm.DecorationSet.create>[0], snap: TabstopSnapshot): DecorationSet => {
     const decos = []
-    // 只画**栈顶**那一帧:嵌套片段时下层位点还在,但视觉上标出来会让人以为能跳过去。
-    const top = stack[stack.length - 1]
-    if (top) {
-      for (const [gi, g] of top.groups.entries()) {
-        for (const r of g.ranges) {
-          if (r.from === r.to) continue // 空位点不画底色(否则是一条看不见的零宽装饰)
-          decos.push(
-            pm.Decoration.inline(r.from, r.to, {
-              class: gi === top.active ? `${CLASS} ${CLASS}-active` : CLASS,
-            }),
-          )
+    for (const g of snap.groups) {
+      if (g.hidden) continue
+      for (const r of g.ranges) {
+        if (r.from === r.to) {
+          decos.push(pm.Decoration.widget(r.from, () => {
+            const el = document.createElement('span')
+            el.className = FIELD_CLASS
+            return el
+          }, { side: -1, ignoreSelection: true, key: `ls-field-${r.from}` }))
+        } else {
+          decos.push(pm.Decoration.inline(r.from, r.to, { class: `${PLACEHOLDER_CLASS} ${PLACEHOLDER_CLASS}-${g.color}` }))
         }
       }
     }
     return pm.DecorationSet.create(doc, decos)
   }
 
-  /** 位置映射的偏置 —— 这里错一位,整套 tabstop 就只能活一个字符。三种情形各不相同:
-   *
-   *  ① **当前正在输入的那一组**(栈顶帧的 active 组):`from` 用 -1、`to` 用 +1,范围**两端都长大**。
-   *     用户在位点里连打时,每个字都落在范围内。⚠️曾经写成「空范围才这样,变非空就换成内偏 (1,-1)」——
-   *     那样第二个字插在 `to` 处、而 `to` 用 -1 原地不动,字就掉到范围外面,光标随即被收尾条件判成
-   *     「跑出片段了」→ 整帧弹掉,Tab 悄悄退化成列表缩进。别再改回去。
-   *  ② **其余组里的空位点**:两端都用 +1,**整体右移**。用 (1,-1) 的话 from 越过 to,范围会被判非法丢掉;
-   *     而 (-1,+1) 会让紧挨着的 `$0$1`(同一位置两个空位点)在 $0 里打字时把 $1 也撑开。
-   *  ③ **其余组里的非空位点**:(1,-1) 内偏,紧贴着它前后插入的字不会被吞进来。 */
-  const mapFrame = (f: Frame, tr: Transaction, isTop: boolean): Frame | null => {
-    const groups: DocGroup[] = []
-    for (const [gi, g] of f.groups.entries()) {
-      const grow = isTop && gi === f.active
-      const ranges = []
-      for (const r of g.ranges) {
-        const empty = r.from === r.to
-        const fromBias = grow ? -1 : 1
-        const toBias = grow || empty ? 1 : -1
-        const a = tr.mapping.mapResult(r.from, fromBias)
-        const b = tr.mapping.mapResult(r.to, toBias)
-        // 两端都落在被删掉的内容里 = 这个位点连同它的上下文一起没了(用户全选删光、
-        // 或外部回灌换掉了整段)。不淘汰的话会留下一串挤在同一个位置的幽灵位点,
-        // 用户按 Tab 只看到"什么都没发生"两次(Tab 被吞了却无事可做)。
-        if (a.deleted && b.deleted) continue
-        if (b.pos >= a.pos && b.pos <= tr.doc.content.size) ranges.push({ from: a.pos, to: b.pos })
-      }
-      if (ranges.length) groups.push({ index: g.index, ranges })
+  /** 一处位点跟着事务走。返回 null = 这处没了。 */
+  const mapRange = (r: Range, tr: Transaction): Range | null => {
+    if (r.from === r.to) {
+      const a = tr.mapping.mapResult(r.from, -1)
+      const b = tr.mapping.mapResult(r.from, 1)
+      if (a.deletedAcross || b.deletedAcross) return null
+      return { from: a.pos, to: b.pos }
     }
-    if (!groups.length) return null
-    return { groups, active: Math.min(f.active, groups.length - 1) }
+    const a = tr.mapping.mapResult(r.from, -1)
+    const b = tr.mapping.mapResult(r.to, 1)
+    // 两端都落在被删掉的内容里 = 这一格连同上下文一起没了(全选删光、外部回灌换掉整段)。
+    if (a.deleted && b.deleted) return null
+    if (b.pos < a.pos || b.pos > tr.doc.content.size) return null
+    return { from: a.pos, to: b.pos }
   }
 
-  /** 光标是否还在这一帧的某个位点里(含边界)。跑出去就算片段结束。 */
-  const cursorInside = (f: Frame, pos: number): boolean =>
-    f.groups.some((g) => g.ranges.some((r) => pos >= r.from && pos <= r.to))
+  const mapRanges = (ranges: Range[], tr: Transaction): Range[] => {
+    const out: Range[] = []
+    for (const r of ranges) {
+      const m = mapRange(r, tr)
+      if (m) out.push(m)
+    }
+    return out
+  }
 
   const plugin = new pm.Plugin<TabstopState>({
     key,
     state: {
-      init: () => ({ stack: [], decos: pm.DecorationSet.empty }),
+      init: (_c, state) => ({ ...EMPTY, decos: build(state.doc, EMPTY) }),
       apply: (tr, prev) => {
-        let stack = prev.stack
+        let { groups, index, color, mirror } = prev as TabstopSnapshot
         if (tr.docChanged) {
-          const top = stack.length - 1
-          stack = stack.map((f, i) => mapFrame(f, tr, i === top)).filter((f): f is Frame => f !== null)
-        }
-        const meta = tr.getMeta(key) as { push?: DocGroup[]; go?: 1 | -1; clear?: true; restore?: Frame[] } | undefined
-        if (meta?.clear) stack = []
-        if (meta?.restore) stack = meta.restore
-        if (meta?.push) stack = [...stack, { groups: meta.push, active: 0 }]
-        if (meta?.go && stack.length) {
-          const top = stack[stack.length - 1]
-          const next = top.active + meta.go
-          if (next < 0) {
-            stack = stack.slice(0, -1) // 从第一个位点往回 → 退出本层片段
-          } else if (next >= top.groups.length) {
-            stack = stack.slice(0, -1) // 跳过最后一个 → 片段收尾
-          } else {
-            stack = [...stack.slice(0, -1), { ...top, active: next }]
+          const kept: Group[] = []
+          for (const [i, g] of groups.entries()) {
+            const ranges = mapRanges(g.ranges, tr)
+            if (ranges.length) kept.push({ ...g, ranges })
+            else if (i < index) index-- // 当前组前面少了一组,下标跟着挪
+          }
+          groups = kept
+          if (index >= groups.length) index = Math.max(0, groups.length - 1)
+          if (mirror) {
+            const m = mapRanges(mirror, tr)
+            mirror = m.length > 1 ? m : null
           }
         }
-        // 光标离开全部位点 = 用户不在这个片段里了,整栈作废(上游同款收尾条件)。
-        // ⚠️只在**选区真的动过**时判:docChanged 的中途态里光标可能瞬时在外面。
-        if (stack.length && (tr.selectionSet || tr.docChanged)) {
-          const pos = tr.selection.from
-          while (stack.length && !cursorInside(stack[stack.length - 1], pos)) stack = stack.slice(0, -1)
+
+        const meta = tr.getMeta(key) as
+          | { add?: DocGroup[]; clear?: true; restore?: TabstopSnapshot }
+          | 'mirror'
+          | undefined
+        if (meta && meta !== 'mirror') {
+          if (meta.clear) ({ groups, index, color, mirror } = EMPTY)
+          if (meta.restore) ({ groups, index, color, mirror } = meta.restore)
+          if (meta.add?.length) {
+            const c = color % N_COLORS
+            color++
+            const added: Group[] = meta.add.map((g) => ({ ranges: g.ranges, color: c, hidden: false }))
+            groups = [...groups]
+            groups.splice(index, 1, ...added)
+          }
         }
-        if (stack === prev.stack && !tr.docChanged) return prev
-        return { stack, decos: build(tr.doc, stack) }
+
+        // 选区变了 → 重算下标;到最后一组 / 只剩一组 → 清表。
+        if (tr.selectionSet && (groups.length || mirror)) {
+          const { from, to } = tr.selection
+          if (groups.length) {
+            index = currentIndex(groups, from, to)
+            if (groups.length <= 1 || index >= groups.length - 1) {
+              const last = groups[index]
+              mirror = last && last.ranges.length > 1 ? last.ranges : null
+              groups = []
+              index = 0
+              color = 0
+            } else if (!groups[0].hidden) {
+              groups = [{ ...groups[0], hidden: true }, ...groups.slice(1)]
+            }
+          }
+          if (mirror && !groupContains({ ranges: mirror }, from, to)) mirror = null
+        }
+
+        const next: TabstopSnapshot = { groups, index, color, mirror }
+        if (!tr.docChanged && groups === prev.groups && index === prev.index && color === prev.color && mirror === prev.mirror) return prev
+        return { ...next, decos: build(tr.doc, next) }
       },
     },
     // 镜像:主位点的文本同步到同组其它位点。放在 appendTransaction 里,用户的那一笔先落定再补。
@@ -147,16 +213,17 @@ export function createTabstops(pm: PmToolkit): TabstopApi {
       if (!trs.some((t) => t.docChanged)) return null
       if (trs.some((t) => t.getMeta(key) === 'mirror')) return null // 自己补的那一笔不再触发
       const st = key.getState(state)
-      const top = st?.stack[st.stack.length - 1]
-      if (!top) return null
-      const g = top.groups[top.active]
-      if (!g || g.ranges.length < 2) return null
-      const pos = state.selection.from
-      const primary = g.ranges.find((r) => pos >= r.from && pos <= r.to) ?? g.ranges[0]
+      if (!st) return null
+      const ranges = st.groups.length ? st.groups[st.index]?.ranges : st.mirror
+      if (!ranges || ranges.length < 2) return null
+      const { from, to } = state.selection
+      const primary = ranges.find((r) => r.from <= from && r.to >= to)
+      // 光标不在这组任何一处里 = 这笔改动不是在这组里打的字,别拿别处的文本去覆盖。
+      if (!primary) return null
       const src = state.doc.textBetween(primary.from, primary.to, '\n', '\n')
       let tr: Transaction | null = null
       // 从后往前改,前面的位置才不会被自己的改动挪走。
-      for (const r of [...g.ranges].sort((a, b) => b.from - a.from)) {
+      for (const r of [...ranges].sort((a, b) => b.from - a.from)) {
         if (r === primary) continue
         const cur = state.doc.textBetween(r.from, r.to, '\n', '\n')
         if (cur === src) continue
@@ -172,38 +239,31 @@ export function createTabstops(pm: PmToolkit): TabstopApi {
     },
   })
 
-  const selectGroup = (view: EditorView, f: Frame): void => {
-    const g = f.groups[f.active]
-    if (!g?.ranges.length) return
-    const r = g.ranges[0]
-    const tr = view.state.tr.setSelection(pm.TextSelection.create(view.state.doc, r.from, r.to))
-    view.dispatch(tr.scrollIntoView())
-  }
-
   return {
     plugin,
     key,
-    push: (tr, groups) => tr.setMeta(key, { push: groups }),
-    snapshot: (state) => key.getState(state)?.stack ?? [],
-    restore: (tr, stack) => tr.setMeta(key, { restore: stack }),
-    hasActive: (state) => (key.getState(state)?.stack.length ?? 0) > 0,
+    push: (tr, groups) => tr.setMeta(key, { add: groups }),
+    snapshot: (state) => {
+      const st = key.getState(state)
+      return st ? { groups: st.groups, index: st.index, color: st.color, mirror: st.mirror } : EMPTY
+    },
+    restore: (tr, snap) => tr.setMeta(key, { restore: snap }),
+    hasActive: (state) => (key.getState(state)?.groups.length ?? 0) > 0,
     cycle: (view, dir) => {
       const st = key.getState(view.state)
-      if (!st?.stack.length) return false
-      const current = view.state.selection
-      // A tabstop with the same selection is not a visible move. Skip coincident
-      // empty stops, as the upstream editor does. When the final frame ends,
-      // let this same Tab reach tabout instead of swallowing a motionless key.
-      for (;;) {
-        view.dispatch(view.state.tr.setMeta(key, { go: dir }))
-        const after = key.getState(view.state)
-        const top = after?.stack[after.stack.length - 1]
-        if (!top) return dir === -1
-        const r = top.groups[top.active]?.ranges[0]
-        if (!r || (r.from === current.from && r.to === current.to)) continue
-        selectGroup(view, top)
+      if (!st?.groups.length) return false
+      const cur = view.state.selection
+      for (let i = st.index + dir; i >= 0 && i < st.groups.length; i += dir) {
+        const g = st.groups[i]
+        const r = g.ranges[0]
+        if (!r) continue
+        // 目标组已经包住当前选区 → 光标放到它末端(上游 toEditorSelection(true))。
+        const [from, to] = groupContains(g, cur.from, cur.to) ? [r.to, r.to] : [r.from, r.to]
+        if (from === cur.from && to === cur.to) continue
+        view.dispatch(view.state.tr.setSelection(pm.TextSelection.create(view.state.doc, from, to)).scrollIntoView())
         return true
       }
+      return false
     },
   }
 }

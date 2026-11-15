@@ -175,7 +175,8 @@ describe('scope: actual ProseMirror documents', () => {
     const r = rig('$$ ali| $$')
     r.type('g'); r.type('n')
     expect(blockString(r.view.state.doc.firstChild!)).toBe('$$ \\begin{align}\n\n\\end{align} $$')
-    expect(r.tabs.hasActive(r.view.state)).toBe(true)
+    // 只有一个 $0:上游展开即清表(光标已经在那一格里),Tab 直接交给矩阵分列。
+    expect(r.tabs.hasActive(r.view.state)).toBe(false)
     r.type('a')
     expect(r.tabs.cycle(r.view, 1)).toBe(false)
     expect(matrixShortcut(r.view, 'Tab')).toBe(true)

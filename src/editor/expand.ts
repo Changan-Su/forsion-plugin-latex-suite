@@ -11,7 +11,7 @@ import { matchSnippet, onWordBoundary, shouldRunInMode, trimReplacementWhitespac
 import { parseTabstops } from '../snippets/tabstopParse'
 import { blockTextAt, inlineTextNodes, mathBlockString, protectedRange, isCodeBlock, textSelectionAt } from './text'
 import { mathContext } from './mathMode'
-import { toDocGroups, type TabstopApi, type Frame } from './tabstops'
+import { toDocGroups, type TabstopApi, type TabstopSnapshot } from './tabstops'
 
 export interface EngineSettings {
   proseSnippetsEnabled?: boolean
@@ -159,14 +159,14 @@ export function createEngine(
     }
   }
 
-  let restore: { doc: EditorState['doc']; literal: EditorState; frames: Frame[]; from: number; to: number } | null = null
+  let restore: { doc: EditorState['doc']; literal: EditorState; tabstops: TabstopSnapshot; from: number; to: number } | null = null
   return {
-    rememberExpansion: (view, literal) => { restore = { doc: view.state.doc, literal, frames: tabstops.snapshot(literal), from: view.state.selection.from, to: view.state.selection.to } },
+    rememberExpansion: (view, literal) => { restore = { doc: view.state.doc, literal, tabstops: tabstops.snapshot(literal), from: view.state.selection.from, to: view.state.selection.to } },
     undoExpansion: (view) => {
       if (!restore || view.composing || !view.state.doc.eq(restore.doc) || view.state.selection.from !== restore.from || view.state.selection.to !== restore.to) { restore = null; return false }
       const r = restore
       restore = null
-      const tr = tabstops.restore(view.state.tr.replace(0, view.state.doc.content.size, r.literal.doc.slice(0)), r.frames)
+      const tr = tabstops.restore(view.state.tr.replace(0, view.state.doc.content.size, r.literal.doc.slice(0)), r.tabstops)
       tr.setSelection(textSelectionAt(tr.doc, r.literal.selection.from, r.literal.selection.to))
       view.dispatch(tr.scrollIntoView())
       return true
@@ -184,7 +184,7 @@ export function createEngine(
       const literal = view.state.applyTransaction(view.state.tr.insertText(typed, _from, _to)).state
       apply(view, a)
       cascade(view)
-      restore = { doc: view.state.doc, literal, frames: tabstops.snapshot(literal), from: view.state.selection.from, to: view.state.selection.to }
+      restore = { doc: view.state.doc, literal, tabstops: tabstops.snapshot(literal), from: view.state.selection.from, to: view.state.selection.to }
       return true
     },
     expandManual: (view) => {
