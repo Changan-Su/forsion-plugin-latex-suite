@@ -103,6 +103,9 @@ function rig(source: string, overrides: Partial<LatexSuiteSettings> = {}, raw: R
       if (!handled) expect(state.doc.eq(before)).toBe(true)
       return handled
     }
+    if (step === 'Esc') {
+      return keys.handleKeyDown(view, { key: 'Escape', shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, isComposing: false })
+    }
     if (step === '→') {
       view.dispatch(state.tr.setSelection(TextSelection.create(state.doc, state.selection.to + 1)))
       return null
@@ -422,6 +425,7 @@ describe('同名占位联动(上游多光标的替代)', () => {
   const mirrored: RawSnippet[] = [
     { trigger: 'qq', replacement: '\\x{$0}{$1}[$1]', options: 'mA' },
     { trigger: 'ww', replacement: '\\y{$0}{$0}', options: 'mA' },
+    { trigger: 'vv', replacement: '[${1:foo}] [$0${1:foo}]$2', options: 'mA' },
   ]
   it('Tab 落到最后一组且它有两处:清表后两处仍联动,光标离开才停', () => {
     const r = rig('$$ | $$', {}, mirrored)
@@ -435,6 +439,25 @@ describe('同名占位联动(上游多光标的替代)', () => {
     r.input('→')
     r.input('c')
     expect(r.line()).toBe('$$ \\x{}{ab}[c|ab] $$')
+  })
+  it('别的组贴着联动位点打字:联动位点不吞这段字,之后联动也不会把它盖掉', () => {
+    // 评审复现:$0 紧挨着第二处 $1,在 $0 打的 XY 不能被算进 $1,否则改 $1 时被联动覆盖。
+    const r = rig('$$ | $$', {}, mirrored)
+    r.input('vv')
+    r.input('XY')
+    expect(r.line()).toBe('$$ [foo] [XY|foo] $$')
+    expect(r.input('Tab')).toBe(true)
+    r.input('Z')
+    expect(r.line()).toContain('[XY')
+    expect(r.line().replace('|', '')).toBe('$$ [fooZ] [XYfooZ] $$')
+  })
+  it('Esc 也能停掉清表后留下的联动', () => {
+    const r = rig('$$ | $$', {}, mirrored)
+    r.input('ww')
+    r.input('a')
+    expect(r.input('Esc')).toBe(true)
+    r.input('b')
+    expect(r.line()).toBe('$$ \\y{ab|}{a} $$')
   })
   it('只有一组(两处)的片段:展开即清表,打字仍两处同步', () => {
     const r = rig('$$ | $$', {}, mirrored)

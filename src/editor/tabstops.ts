@@ -123,8 +123,22 @@ export function createTabstops(pm: PmToolkit): TabstopApi {
     return pm.DecorationSet.create(doc, decos)
   }
 
-  /** 一处位点跟着事务走。返回 null = 这处没了。 */
-  const mapRange = (r: Range, tr: Transaction): Range | null => {
+  /** 一处位点跟着事务走。返回 null = 这处没了。
+   *  `exclusive`:贴着边界插进来的字不算进这一格(只影响纯插入;整段被替换时两端照样落在替换内容外沿)。
+   *  给「不是当前组、又有好几处要联动」的组用:上游靠多光标,这类格贴着别的格时会一起长;
+   *  这里是把主位点的文本抄过去,吞进来的别人的字会在下一次联动时被盖掉(评审复现过)。 */
+  const mapRange = (r: Range, tr: Transaction, exclusive = false): Range | null => {
+    if (exclusive) {
+      if (r.from === r.to) {
+        const p = tr.mapping.mapResult(r.from, 1)
+        return p.deletedAcross ? null : { from: p.pos, to: p.pos }
+      }
+      const a = tr.mapping.mapResult(r.from, 1)
+      const b = tr.mapping.mapResult(r.to, -1)
+      if (a.deleted && b.deleted) return null
+      if (b.pos < a.pos || b.pos > tr.doc.content.size) return null
+      return { from: a.pos, to: b.pos }
+    }
     if (r.from === r.to) {
       const a = tr.mapping.mapResult(r.from, -1)
       const b = tr.mapping.mapResult(r.from, 1)
@@ -139,10 +153,10 @@ export function createTabstops(pm: PmToolkit): TabstopApi {
     return { from: a.pos, to: b.pos }
   }
 
-  const mapRanges = (ranges: Range[], tr: Transaction): Range[] => {
+  const mapRanges = (ranges: Range[], tr: Transaction, exclusive = false): Range[] => {
     const out: Range[] = []
     for (const r of ranges) {
-      const m = mapRange(r, tr)
+      const m = mapRange(r, tr, exclusive)
       if (m) out.push(m)
     }
     return out
@@ -157,7 +171,7 @@ export function createTabstops(pm: PmToolkit): TabstopApi {
         if (tr.docChanged) {
           const kept: Group[] = []
           for (const [i, g] of groups.entries()) {
-            const ranges = mapRanges(g.ranges, tr)
+            const ranges = mapRanges(g.ranges, tr, i !== index && g.ranges.length > 1)
             if (ranges.length) kept.push({ ...g, ranges })
             else if (i < index) index-- // 当前组前面少了一组,下标跟着挪
           }

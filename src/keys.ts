@@ -88,7 +88,8 @@ export function createKeyHandlers(deps: KeyDeps): {
       const s = deps.settings()
       if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return false
       if (event.key === 'Backspace' && !event.shiftKey && engine.undoExpansion(view)) return true
-      if (event.key === 'Escape' && tabstops.hasActive(view.state)) {
+      // 清表后还在联动的那一组(mirror)也算:Esc 是停掉联动的唯一按键。
+      if (event.key === 'Escape' && (tabstops.hasActive(view.state) || tabstops.snapshot(view.state).mirror)) {
         view.dispatch(view.state.tr.setMeta(tabstops.key, { clear: true }))
         return true
       }
