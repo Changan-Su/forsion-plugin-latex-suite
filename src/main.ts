@@ -18,6 +18,7 @@ import { setTextSelectionCtor } from './editor/text'
 import { createTabstops } from './editor/tabstops'
 import { createEngine } from './editor/expand'
 import { bracketPlugins } from './editor/brackets'
+import { dollarPlugins } from './editor/dollars'
 import { mathPreviewPlugins } from './editor/mathPreview'
 import { concealPlugins, CONCEAL_CSS } from './conceal/conceal'
 import { autoEnlargeBrackets, EDITOR_COMMANDS } from './features'
@@ -27,20 +28,38 @@ import { splitList } from './settingsUi/model'
 
 const STYLE_ID = 'latex-suite-styles'
 
-// 占位标记的颜色与几何逐值照上游 styles.css(latex-suite-snippet-placeholder-N / cm-snippetFieldPosition)。
+// 占位标记、括号、`$` 的颜色与几何逐值照上游 styles.css(latex-suite-snippet-placeholder-N /
+// cm-snippetFieldPosition / latex-suite-color-bracket-N / latex-suite-*-dollar*)。
 // 明暗跟宿主走:宿主在 <html>(以及独立画出来的面板 / 导出副本)上写 data-mode,变量挂在那一层,
 // 就近的那一层说了算 —— 不用 prefers-color-scheme,宿主主题和系统明暗无关。
+//
+// 括号与 `$` 的着色和宿主自己的公式源码着色落在**同一个 span** 上(ProseMirror 把同一段字上的
+// 行内装饰并成一个元素),谁赢只看选择器权重,和两份样式表谁先加载无关:
+// `.ProseMirror .latex-suite-math-token.<类>` 是 (0,3,0),宿主现行的 `.am-app .math-source-delimiter`
+// 是 (0,2,0),更新的宿主把 token 颜色包进 :where()(0 权重)。所以不需要 !important ——
+// 用了反而会压过宿主给选区 / 只读态留的口子。
 const BASE_CSS = `
 :root, [data-mode="light"] {
   --ls-ph-0-bg: #87cefa2e; --ls-ph-0-outline: #87cefa6e;
   --ls-ph-1-bg: #ffa50033; --ls-ph-1-outline: #ffa5006b;
   --ls-ph-2-bg: #00ff0022; --ls-ph-2-outline: #00ff0060;
+  --ls-br-0: #527aff; --ls-br-1: #ff50b7; --ls-br-2: #69ba00;
+  --ls-br-cursor: rgba(66, 12, 192, 0.3);
 }
 [data-mode="dark"] {
   --ls-ph-0-outline: #87cefa43;
   --ls-ph-1-outline: #ffa5004d;
   --ls-ph-2-outline: #00ff003d;
+  --ls-br-0: #47b8ff; --ls-br-1: #ff55cd; --ls-br-2: #73ff63;
+  --ls-br-cursor: rgba(152, 111, 246, 0.6);
 }
+.ProseMirror .latex-suite-math-token.latex-suite-color-bracket-0 { color: var(--ls-br-0); }
+.ProseMirror .latex-suite-math-token.latex-suite-color-bracket-1 { color: var(--ls-br-1); }
+.ProseMirror .latex-suite-math-token.latex-suite-color-bracket-2 { color: var(--ls-br-2); }
+.ProseMirror .latex-suite-math-token.latex-suite-mismatched-bracket { color: rgba(255, 18, 18, 0.8); }
+.ProseMirror .latex-suite-math-token.latex-suite-highlighted-bracket { background-color: var(--ls-br-cursor); }
+.ProseMirror .latex-suite-math-token.latex-suite-highlighted-dollar-inline { color: #61ae08; }
+.ProseMirror .latex-suite-math-token.latex-suite-error-dollar { color: red; }
 .latex-suite-snippet-placeholder {
   border-radius: 2px;
   background-color: var(--ls-ph-bg);
@@ -181,6 +200,9 @@ export function setup(ctx: PluginContext): () => void {
     ...bracketPlugins(pm, {
       highlight: () => store.ready() && store.settings().highlightBracketsEnabled,
       colorize: () => store.ready() && store.settings().colorPairedBracketsEnabled,
+    }),
+    ...dollarPlugins(pm, {
+      enabled: () => store.ready() && store.settings().highlightDollarEnabled,
     }),
     ...mathPreviewPlugins(pm, {
       enabled: () => store.ready() && store.settings().mathPreviewEnabled,

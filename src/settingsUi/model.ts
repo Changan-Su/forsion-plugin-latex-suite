@@ -61,6 +61,8 @@ export interface LatexSuiteSettings {
   highlightBracketsEnabled: boolean
   /** 配对括号按层级着色。 */
   colorPairedBracketsEnabled: boolean
+  /** 公式定界符 `$` / `$$` 着色:配上的标绿,没配上的标红(上游同名设置)。 */
+  highlightDollarEnabled: boolean
 
   // ── 高级
   wordDelimiters: string
@@ -165,6 +167,7 @@ export const DEFAULT_SETTINGS: LatexSuiteSettings = {
   mathPreviewEnabled: false,
   highlightBracketsEnabled: true,
   colorPairedBracketsEnabled: true,
+  highlightDollarEnabled: true,
 
   // `\n` 是**两个字符**的字面量,不是换行 —— onWordBoundary 会把它还原成换行符。别写成真换行。
   wordDelimiters: '., +-\\n\t:;!?\\/{}[]()=~$\'"|`<>*^%#@&',

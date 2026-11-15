@@ -146,11 +146,19 @@ const STRINGS = {
   ],
   'disp.highlight.label': ['高亮配对括号', 'Highlight matching bracket'],
   'disp.highlight.desc': [
-    '光标贴着一个括号时,把和它配对的那一个也标出来。',
-    'When the cursor sits next to a bracket, highlight its partner.',
+    '给包住光标的最内层那一对括号加底色;光标贴在括号外侧也算在里面。',
+    'Shade the innermost pair of brackets around the cursor, including when the cursor sits just outside one.',
   ],
   'disp.color.label': ['括号按层级着色', 'Color paired brackets'],
-  'disp.color.desc': ['嵌套的括号按深度给不同颜色,一眼看出层级。', 'Nested brackets get different colors per depth.'],
+  'disp.color.desc': [
+    '嵌套的括号按深度轮换三种颜色,配不上的括号标红。',
+    'Nested brackets cycle through three colors by depth; unmatched brackets turn red.',
+  ],
+  'disp.dollar.label': ['公式定界符着色', 'Highlight math delimiters'],
+  'disp.dollar.desc': [
+    '配上的 $ 与 $$ 标绿,没写完的 $$ 和块级公式里多出来的 $ 标红。',
+    'Matched $ and $$ turn green; an unclosed $$ or a stray $ inside display math turns red.',
+  ],
 
   // ── 高级
   'adv.variables.label': ['片段变量', 'Snippet variables'],

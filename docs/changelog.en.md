@@ -7,6 +7,10 @@
 - Placeholder navigation now matches Latex Suite in Obsidian. After the inner snippet of a nested expansion, Tab moves to the next outer placeholder instead of selecting the whole outer content. If you move to a later placeholder with the mouse or arrow keys, Tab continues from there. Navigation ends at the last placeholder, which is no longer highlighted or extended by further typing.
 - After snippets with a single placeholder, such as `mk` and `dm`, the first Tab is no longer consumed by placeholder navigation. Shift+Tab on the first placeholder no longer ends navigation, and the placeholders remain.
 - The placeholder after a fraction is no longer lost when typing `//` inside brackets enlarges them. Fractions created with `/` inside math now also let Tab move from the denominator to after the fraction.
+- Brackets in math now use the same colors as Latex Suite in Obsidian. Paired brackets cycle through three colors by nesting depth, and unmatched brackets turn red. Command brackets such as `\{ \}`, `\left( \right)` and `\langle \rangle` are paired too. The innermost pair around the cursor gets a background instead of an outline.
+- Placeholder markers use the upstream style: an empty placeholder is a thin dotted line, and filled placeholders cycle through blue, orange and green backgrounds.
+- New math delimiter highlighting, on by default. Matched `$` and `$$` turn green; an unclosed `$$` or a stray `$` inside display math turns red. Turn it off under Display settings.
+- These colors have separate light and dark variants that follow Forsion's appearance, and Forsion's own math source colors no longer override them.
 
 ## 1.1.2 — 2026-11-13
 
