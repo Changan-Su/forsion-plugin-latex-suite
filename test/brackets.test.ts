@@ -2,7 +2,7 @@
 // 期望值来自同一批公式在 Obsidian 里的实测。
 import { describe, expect, it } from 'vitest'
 import { Schema, Slice, Fragment } from 'prosemirror-model'
-import { EditorState, Plugin, PluginKey, TextSelection, Selection, NodeSelection } from 'prosemirror-state'
+import { EditorState, Plugin, PluginKey, TextSelection, Selection, NodeSelection, AllSelection } from 'prosemirror-state'
 import { Decoration, DecorationSet } from 'prosemirror-view'
 import { bracketTree, walkBrackets, cursorPair, bracketPlugins, MATH_TOKEN_CLASS } from '../src/editor/brackets'
 import { dollarMarks, dollarPlugins } from '../src/editor/dollars'
@@ -11,6 +11,7 @@ const schema = new Schema({ nodes: {
   doc: { content: 'block+' }, paragraph: { group: 'block', content: 'inline*' },
   code_block: { group: 'block', content: 'text*', code: true },
   hard_break: { inline: true, group: 'inline' }, text: { group: 'inline' },
+  divider: { group: 'block', atom: true },
 }, marks: { code: {} } })
 const pm = { Plugin, PluginKey, TextSelection, Selection, NodeSelection, Decoration, DecorationSet, Slice, Fragment } as never
 
@@ -118,6 +119,16 @@ describe('bracket plugin decorations', () => {
       `)@9:${MATH_TOKEN_CLASS} latex-suite-highlighted-bracket`,
     ])
     expect(run(d, 3)).toHaveLength(2)
+  })
+  it('a selection that is not inside a textblock (select all, a selected block atom) does not throw', () => {
+    const d = schema.node('doc', null, [schema.node('divider'), schema.node('paragraph', null, [schema.text('$(a)$')])])
+    const plugins = bracketPlugins(pm, { highlight: () => true, colorize: () => true })
+    for (const sel of [new AllSelection(d), NodeSelection.create(d, 0)]) {
+      const state = EditorState.create({ schema, doc: d, plugins, selection: sel })
+      expect(() => state.apply(state.tr.setSelection(sel))).not.toThrow()
+      // 着色照常,光标那一对没有可画的。
+      expect(plugins.flatMap((p) => (p.props.decorations!.call(p, state) as DecorationSet).find())).toHaveLength(2)
+    }
   })
   it('code blocks are left alone', () => {
     expect(run(doc([['code_block', '$(a)$']]), 3)).toEqual([])

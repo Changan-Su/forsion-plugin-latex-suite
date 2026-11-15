@@ -266,7 +266,10 @@ export function bracketPlugins(pm: PmToolkit, opts: BracketOptions): Plugin[] {
 
   const buildCursor = (state: EditorState): DecorationSet => {
     if (!opts.highlight()) return pm.DecorationSet.empty
-    const { from, to } = state.selection
+    const { from, to, $from } = state.selection
+    // 全选、选中一个块级原子(图片、分割线)时选区不在任何文本块里:没有「光标那一对」。
+    // ⚠️别去掉:顶层 $from.before() 会抛,而这里跑在 init / apply 里,一抛整个编辑器起不来。
+    if (!$from.parent.isTextblock) return pm.DecorationSet.empty
     const decos: Decoration[] = []
     eachMath(state.doc, ({ span, text, base }) => {
       if (decos.length) return
@@ -278,7 +281,7 @@ export function bracketPlugins(pm: PmToolkit, opts: BracketOptions): Plugin[] {
         mark(base + hit.open.from, base + hit.open.to, 'latex-suite-highlighted-bracket'),
         mark(base + hit.close.from, base + hit.close.to, 'latex-suite-highlighted-bracket'),
       )
-    }, { from: state.selection.$from.before(state.selection.$from.depth), to: state.selection.$from.after(state.selection.$from.depth) })
+    }, { from: $from.before(), to: $from.after() })
     return pm.DecorationSet.create(state.doc, decos)
   }
 
