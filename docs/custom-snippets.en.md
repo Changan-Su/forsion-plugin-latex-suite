@@ -38,7 +38,7 @@ You can use this example as a small library. Type `@a` for `\alpha`, or type `ff
 | Option | Meaning |
 | --- | --- |
 | `m`, `n`, `M` | Math, inline math only, and block math only, respectively. |
-| `t` | Prose and text inside an equation, such as `\text{…}`. Automatic expansion in either place requires **Automatic text snippets**. |
+| `t` | Prose and text inside an equation, such as `\text{…}`. Automatic expansion in either place follows **Automatic text snippets**, which is on by default. |
 | `A` | Expand as soon as you finish typing the trigger. Omit it to use the configured manual trigger key. |
 | `r` | Treat a string trigger as a regular expression. A regex literal implies this option. |
 | `w` | Require a word boundary on both sides of the trigger. Configure word delimiters under **Advanced**. |
@@ -58,7 +58,7 @@ Under **Advanced**, edit the JSON object in **Snippet variables**, or configure 
 
 1. Copy your snippet array. If it is embedded in a Markdown fence, a module export, or a larger script, extract it into a single array expression. Copy your variables as a JSON object.
 2. Paste the array into the built-in editor, or save it in a vault file and select that source. Set your manual trigger key and display preferences.
-3. Check the syntax differences below, then try your most-used triggers under **Guide & practice**. If you rely on `mk` or `dm`, enable **Automatic text snippets**.
+3. Check the syntax differences below, then try your most-used triggers under **Guide & practice**. `mk` and `dm` expand in prose by default, controlled by **Automatic text snippets**.
 
 | Upstream feature | Behavior in Forsion |
 | --- | --- |

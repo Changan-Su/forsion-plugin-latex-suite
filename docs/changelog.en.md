@@ -11,6 +11,7 @@
 - Placeholder markers use the upstream style: an empty placeholder is a thin dotted line, and filled placeholders cycle through blue, orange and green backgrounds.
 - New math delimiter highlighting, on by default. Matched `$` and `$$` turn green; an unclosed `$$` or a stray `$` inside display math turns red. Turn it off under Display settings.
 - These colors have separate light and dark variants that follow Forsion's appearance, and Forsion's own math source colors no longer override them.
+- Automatic text snippets are now on by default, as in Latex Suite for Obsidian: typing `mk` or `dm` in prose inserts inline or block math. If an earlier version saved this setting as off, that choice is kept. To keep prose snippets from expanding, turn off Automatic text snippets under Snippets.
 
 ## 1.1.2 — 2026-11-13
 

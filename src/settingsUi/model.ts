@@ -134,7 +134,8 @@ export function serializeRawSnippets(snippets: RawSnippet[]): string {
 
 export const DEFAULT_SETTINGS: LatexSuiteSettings = {
   snippetsEnabled: true,
-  proseSnippetsEnabled: false,
+  // 与 Obsidian 的 Latex Suite 一致:正文里 mk / dm 直接展开。存过 false 的用户照旧(mergeSettings 只补缺的键)。
+  proseSnippetsEnabled: true,
   snippetsTrigger: 'Tab',
   snippetsSource: 'user',
   snippetsFile: '',

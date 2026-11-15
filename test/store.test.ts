@@ -345,7 +345,7 @@ describe('variables and external file events', () => {
     const store = h.start()
     await flush()
     expect(store.watchMode()).toBe('manual')
-    expect(store.settings().proseSnippetsEnabled).toBe(false)
+    expect(store.settings().proseSnippetsEnabled).toBe(true)
     expect(store.settings().mathPreviewEnabled).toBe(false)
   })
 })

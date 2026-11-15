@@ -11,7 +11,7 @@ Type short triggers to enter LaTeX in Amadeus notes. Your equations are stored i
 3. Type `@a` between the delimiters to expand it to `\alpha`. Follow it with `sr` to get `\alpha^{2}`.
 4. In another empty equation, type `//` to get `\frac{}{}`. Fill in the numerator, press **Tab** to reach the denominator, and press **Tab** again after filling it in to move past the fraction.
 
-By default, snippets expand automatically inside paired math delimiters. You can type `mk` and `dm` in prose as usual. To use them to insert equations, enable **Automatic text snippets** under **Snippets** in the plugin settings.
+Math snippets expand automatically inside paired math delimiters. Typing `mk` or `dm` in prose inserts inline or block math, as in Latex Suite for Obsidian. To keep them as plain text, turn off **Automatic text snippets** under **Snippets** in the plugin settings.
 
 Open **Guide & practice** in the plugin settings to search the active library by trigger, LaTeX command, or description. The practice editor uses the same input rules as notes and keeps your practice text in memory.
 

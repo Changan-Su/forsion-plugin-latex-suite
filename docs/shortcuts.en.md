@@ -23,7 +23,9 @@ Block math can span lines within one text block. Outside matrix shortcut environ
 
 **A trigger stays as typed.** Use an insert command to create paired delimiters, then type `@a` one character at a time between them. Check that the plugin is enabled and automatic expansion is active. A lone opening `$`, an escaped `\$`, and dollar signs in code do not open math. Keep leading and trailing spaces outside inline delimiters. Pasting and IME composition do not trigger automatic expansion. For a custom snippet, check its library, mode, and trigger key.
 
-**Typing `mk` or `dm` in prose leaves it as text.** Use the insert commands in the command palette. If you prefer automatic text snippets, enable **Automatic text snippets** under **Snippets** in the plugin settings. This also controls automatic snippets inside text macros such as `\text{…}`. Manual prose snippets still use your chosen trigger key.
+**Typing `mk` or `dm` in prose leaves it as text.** Check that **Automatic text snippets** is on under **Snippets** in the plugin settings. It is on for new installs; upgrades keep the choice saved by an earlier version. This also controls automatic snippets inside text macros such as `\text{…}`. Manual prose snippets still use your chosen trigger key. You can also use the insert commands in the command palette.
+
+**Typing `mk` or `dm` in prose turned into math.** Press **Backspace** right away to restore the text. To keep prose snippets from expanding, turn off **Automatic text snippets** under **Snippets** in the plugin settings.
 
 **I want to pause automatic expansion.** Run **Pause LaTeX automatic expansion** from the command palette. Run **Resume LaTeX automatic expansion** when ready. Pausing stops automatic snippets, automatic fractions, and jumping out by typing a closing bracket. Manual snippets and active tabstops remain available.
 

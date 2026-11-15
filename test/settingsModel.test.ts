@@ -94,6 +94,13 @@ describe('mergeSettings 的防御', () => {
     expect(mergeSettings({ mathPreviewEnabled: true, proseSnippetsEnabled: true }))
       .toMatchObject({ mathPreviewEnabled: true, proseSnippetsEnabled: true })
   })
+  it('正文自动片段:没存过的按新缺省(开),存过 false 的照旧', () => {
+    expect(DEFAULT_SETTINGS.proseSnippetsEnabled).toBe(true)
+    // 1.1.x 存下的整份设置里没有这个键(或者用户的设置只存了部分键)→ 跟新缺省走。
+    expect(mergeSettings({ snippetsEnabled: true, taboutExitEquationOnlyOnEOL: false }).proseSnippetsEnabled).toBe(true)
+    // 用户自己关过(或旧版整份落盘时写下的 false)→ 原样保留,不被新缺省翻回去。
+    expect(mergeSettings({ proseSnippetsEnabled: false }).proseSnippetsEnabled).toBe(false)
+  })
   it('类型不对 / 负数 / 非法枚举一律丢弃', () => {
     expect(mergeSettings({ snippetsEnabled: 'yes' }).snippetsEnabled).toBe(true)
     expect(mergeSettings({ concealRevealTimeout: -5 }).concealRevealTimeout).toBe(0)
