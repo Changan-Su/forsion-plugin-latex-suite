@@ -184,6 +184,7 @@ describe('占位跳转与 Obsidian 逐键一致', () => {
       ['Tab', '$$\nt({n_{j}|})\n$$', '$$\nt({n_{j}·}·)·\n$$'],
       ['Tab', '$$\nt({n_{j}}|)\n$$', '$$\nt({n_{j}·}·)·\n$$'],
       ['Tab', '$$\nt({n_{j}})|\n$$'],
+      ['Tab', '$$\nt({n_{j}})\n$$|'],
     ], { proseSnippetsEnabled: true })
   })
 
