@@ -127,11 +127,32 @@ function sameCopy(before: Range[] | undefined, after: Range[] | undefined, old: 
   return a >= 0 && a === rangeIndexOf(after, now.from, now.to)
 }
 
+/** ranges 的每一处都落在 copies 的某一份里(一份里可以有几处)。 */
+function allInCopies(ranges: Range[], copies: Range[]): boolean {
+  return ranges.every((r) => rangeIndexOf(copies, r.from, r.to) >= 0)
+}
+
 /** ranges 是否在 copies 里一份一处(各落在不同的一份里,份数相同)。 */
 function onePerCopy(ranges: Range[], copies: Range[]): boolean {
   if (ranges.length !== copies.length) return false
   const hit = new Set(ranges.map((r) => rangeIndexOf(copies, r.from, r.to)))
   return !hit.has(-1) && hit.size === copies.length
+}
+
+/**
+ * 见文件头 ⑨:在多处组 places 里展开、外层组要转成镜像余组时,已有的镜像余组 copies 是否留着。
+ * - 每份恰好一处:整份照抄已经带上外层组,留着更外的那层。
+ * - 每份里不止一处(同号格在一份里出现两次,或嵌套的同号片段):新格都落在 places 里、而且每份都有
+ *   places 的一处时,换成 places 逐处照抄,两层都跟得上(`ww ww _` 里层的两份也展开);新格落在
+ *   places 之外(自动分式把格前面的字一起吃进分子),或有的份里已经没有 places 的一处,逐处照抄会丢掉
+ *   另一份,留着整份照抄。
+ */
+function keepCopyMirror(places: Range[], copies: Range[], added: DocGroup[]): boolean {
+  if (onePerCopy(places, copies)) return true
+  if (!allInCopies(places, copies)) return false
+  const everyCopyHasPlace = copies.every((c) => places.some((r) => r.from >= c.from && r.to <= c.to))
+  const addedInPlaces = added.every((g) => g.ranges.every((r) => rangeIndexOf(places, r.from, r.to) >= 0))
+  return !(everyCopyHasPlace && addedInPlaces)
 }
 
 /** 第一个包住选区的组;一个都不包 = 表长(上游 getCurrentTabstopGroupIndex)。 */
@@ -268,10 +289,13 @@ export function createTabstops(pm: PmToolkit): TabstopApi {
           if (meta.restore) ({ groups, index, color, mirror, linked } = meta.restore)
           if (meta.add?.length) {
             // 见文件头 ⑨:在联动着的多处组里展开,外层组转成镜像余组。
-            // 已有的镜像余组每一份里恰好各有外层组的一处(外层组本身就是从镜像里补出来的),整份照抄已经
-            // 带上外层组,留着更外的那层;换成外层组反而丢了外面那层(`_` Tab `/` 之后另一份不再跟)。
+            // 外层组本身是从已有镜像余组里补出来的时候,先看整份照抄还要不要留着(keepCopyMirror);
+            // 换成外层组反而丢了外面那层(`_` Tab `/` 之后另一份不再跟)。
+            // ⚠️曾经只认「每份恰好一处」:同号格在每份里出现两次时(`${1:p}$2 $2`),外层组换掉了镜像,
+            // 自动分式又把 p 吃进分子、光标落在各处之外,镜像清空,另一份从此停在旧值。
+            // ⚠️也不能一律留整份照抄:`ww ww _` 里层第二份就不再跟。
             const outer = groups[index]
-            if (linked && outer && outer.ranges.length > 1 && !(mirror && onePerCopy(outer.ranges, mirror))) mirror = outer.ranges
+            if (linked && outer && outer.ranges.length > 1 && !(mirror && keepCopyMirror(outer.ranges, mirror, meta.add))) mirror = outer.ranges
             const c = color % N_COLORS
             color++
             // 光标那一份之外还有内容要跟着抄的(外层刚转成镜像余组,或本来就在镜像余组里),新格等抄完再补到各份。

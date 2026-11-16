@@ -135,3 +135,47 @@ describe('G: 同号格的某一份紧贴着别的格时,Tab 也不来回打转(�
     expect(r.hasActive(), seen.join('\n')).toBe(false)
   })
 })
+
+/** 从 at 起连续的几段 `{…}`(按括号配对)里的内容。 */
+function bracedArgs(s: string, at: number): string[] {
+  const out: string[] = []
+  while (s[at] === '{') {
+    let depth = 0
+    let j = at
+    for (; j < s.length; j++) {
+      if (s[j] === '{') depth++
+      else if (s[j] === '}' && --depth === 0) break
+    }
+    out.push(s.slice(at + 1, j))
+    at = j + 1
+  }
+  return out
+}
+
+describe('R1: 镜像那份里 Tab 落到每份出现两次的格,再展开带格的片段,外层另一份照样跟', () => {
+  // 第一处是空的、紧贴前一格(`${1:p}$2`):自动分式会把 p 一起吃进分子,光标落到 $2 的几处之外。
+  const SN = [
+    { trigger: 'ww', replacement: '\\y{$0}{$0} $1 $2', options: 'mA' },
+    { trigger: 'zu', replacement: '\\u{${1:p}$2 $2 $3}', options: 'mA' },
+    ...DEFAULT_SNIPPETS,
+  ]
+  it('R1a ww zu Tab / b:两份都是分式', () => {
+    const r = rig('$$ | $$', {}, SN)
+    r.run('ww', 'zu', 'Tab', '/', 'b')
+    expect(r.all()).toBe('$$ \\y{\\u{\\frac{p}{b} }}{\\u{\\frac{p}{b} }}  $$')
+  })
+  it('R1b ww zu Tab BS ww:另一份跟着展开,不留半截触发串', () => {
+    const r = rig('$$ | $$', {}, SN)
+    r.run('ww', 'zu', 'Tab', 'BS', 'ww')
+    const out = r.all()
+    const [a, b] = bracedArgs(out, out.indexOf('\\y{') + 2)
+    expect(b, out).toBe(a)
+    expect(b, out).toContain('\\u{\\y{}{}')
+    expect(b, out).not.toContain('w w')
+  })
+  it('R1c 嵌套 ww ww _:里层两份也都展开(整份照抄不能顶掉逐处照抄)', () => {
+    const r = rig('$$ | $$', {}, SN)
+    r.run('ww', 'ww', '_')
+    expect(r.all()).toBe('$$ \\y{\\y{_{}}{_{}} }{\\y{_{}}{_{}} }  $$')
+  })
+})
