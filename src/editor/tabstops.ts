@@ -305,8 +305,9 @@ export function createTabstops(pm: PmToolkit): TabstopApi {
             index = navTo !== undefined && navTo < groups.length && groupContains(groups[navTo], from, to) ? navTo : currentIndex(groups, from, to)
             if (groups.length <= 1 || index >= groups.length - 1) {
               const last = groups[index]
-              // 见文件头 ⑧:只有 Tab / 展开落到的多处组才留镜像余组。
-              if (placed && last && last.ranges.length > 1) mirror = last.ranges
+              // 见文件头 ⑧:只有 Tab / 展开落到的多处组才留镜像余组。已有的镜像余组每一份里各有它一处
+              // (它是从镜像里补出来的格)就留着外层那层,理由同 ⑨。
+              if (placed && last && last.ranges.length > 1 && !(mirror && onePerCopy(last.ranges, mirror))) mirror = last.ranges
               groups = []
               index = 0
               color = 0

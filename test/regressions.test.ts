@@ -114,6 +114,11 @@ describe('F2: 同号格里打出的分式,分式的格各含每一份(上游每�
     r.run('ww', 'a', '/', 'b', 'Tab', 'Tab', 'S-Tab', 'X')
     expect(r.all()).toContain('\\y{\\frac{a}{b}X}{\\frac{a}{b}X}')
   })
+  it('F2e 两份:分式 Tab 到最后一格以后再打分式,分子包住前面的分式,两份照样一致', () => {
+    const r = rig('$$ | $$', {}, [{ trigger: 'ww', replacement: '\\y{$0}{$0}', options: 'mA' }])
+    r.run('ww', 'a', '/', 'b', 'Tab', 'x', '/', 'c')
+    expect(r.all()).toBe('$$ \\y{\\frac{\\frac{a}{b}x}{c}}{\\frac{\\frac{a}{b}x}{c}} $$')
+  })
   it('F2d 两份:下标 Tab 出来再打分式,两份都得到分式(补到各份的格里再展开,外层那份照常跟)', () => {
     const r = rig('$$ | $$', {}, [...W, ...DEFAULT_SNIPPETS])
     r.run('ww', '_', 'Tab', '/', 'b')
