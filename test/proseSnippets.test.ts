@@ -138,3 +138,22 @@ describe('S2 dm 的词边界看光标后面的字符', () => {
     expect(b.text()).toBe('hello $$\n\n$$ there')
   })
 })
+
+describe('含 dm 的常见单词(与真 Obsidian 逐条对过)', () => {
+  // Obsidian 1.15.1 + Latex Suite 1.12.8 缺省设置:段末或后面是空格时,`admin` 在打出 m 时展开成块级公式
+  // (`(\S\s*)dm` 片段,a 前面是空格);`landmark`、`headmaster` 不展开;紧贴下一个词前面打 admin 不展开。
+  it.each([
+    ['Para text', ' admin', 'Para text a\n$$\nin\n$$'],
+    ['Para text', ' landmark', 'Para text landmark'],
+    ['Para text', ' headmaster', 'Para text headmaster'],
+    ['Para text| here.', ' admin', 'Para text a\n$$\nin\n$$ here.'],
+    ['Para text| here.', ' landmark', 'Para text landmark here.'],
+    ['Para text| here.', ' headmaster', 'Para text headmaster here.'],
+    ['Para text |here.', 'admin', 'Para text adminhere.'],
+  ])('%s + %j', (seed, typed, want) => {
+    const r = rig('paragraph', [seed])
+    r.type(typed)
+    expect(r.text()).toBe(want)
+  })
+})
+
