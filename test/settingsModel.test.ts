@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_SETTINGS, DEFAULTS_REVISION, DEFAULTS_REVISION_KEY, mergeSettings, migrateDefaultSnippets, releasedDefaultFingerprints, savedDefaultsRevision, serializeRawSnippets, splitList, textFingerprint } from '../src/settingsUi/model'
+import { DEFAULT_SETTINGS, DEFAULTS_REVISION, DEFAULTS_REVISION_KEY, mergeSettings, migrateDefaultSnippets, migrateDefaultSnippetsWith, releasedDefaultFingerprints, revisionToSave, savedDefaultsRevision, serializeRawSnippets, splitList, textFingerprint } from '../src/settingsUi/model'
 import { DEFAULT_SNIPPETS } from '../src/snippets/defaults'
 import { evalSnippetSource, parseSnippets } from '../src/snippets/parse'
 import { DEFAULT_SNIPPET_VARIABLES } from '../src/snippets/variables'
@@ -96,6 +96,29 @@ describe('旧版缺省片段库升级到新缺省', () => {
       [{ [DEFAULTS_REVISION_KEY]: '1' }, null], [{ [DEFAULTS_REVISION_KEY]: -1 }, null], [{ [DEFAULTS_REVISION_KEY]: 1.5 }, null], [{ [DEFAULTS_REVISION_KEY]: null }, null]] as const) {
       expect(savedDefaultsRevision(saved)).toBe(rev)
     }
+  })
+  it('保存时的修订号:没有写当前;读得懂的取较大的;读不懂的原样写回', () => {
+    expect(revisionToSave(null)).toBe(DEFAULTS_REVISION)
+    expect(revisionToSave({})).toBe(DEFAULTS_REVISION)
+    expect(revisionToSave({ [DEFAULTS_REVISION_KEY]: 0 })).toBe(DEFAULTS_REVISION)
+    expect(revisionToSave({ [DEFAULTS_REVISION_KEY]: DEFAULTS_REVISION + 1 })).toBe(DEFAULTS_REVISION + 1)
+    for (const odd of ['1', 1.5, -1, null, true, {}, []]) expect(revisionToSave({ [DEFAULTS_REVISION_KEY]: odd })).toBe(odd)
+  })
+  // 模拟下一版:修订号升到 2,本版缺省(修订号 1 时发布)登记在第 1 张表。
+  describe('下一版的迁移对照从存的修订号起的每一张旧表', () => {
+    const tables = { 0: { [textFingerprint(read('1.1.0-1.1.2.txt'))]: '1.1.0 - 1.1.2' }, 1: { [textFingerprint(DEFAULT_SETTINGS.snippetsSourceText)]: 'this release' } }
+    const next = { revision: 2, tables, current: 'NEXT' }
+    it('没有修订号(被 1.1.2 存盘丢掉了)、片段库是本版缺省 → 下一版照样升级', () => {
+      expect(migrateDefaultSnippetsWith(DEFAULT_SETTINGS.snippetsSourceText, 0, next)).toBe('NEXT')
+      expect(migrateDefaultSnippetsWith(read('1.1.0-1.1.2.txt'), 0, next)).toBe('NEXT')
+    })
+    it('修订号 1:本版缺省升级;1.1.x 原文是在本版里有意设的,不动', () => {
+      expect(migrateDefaultSnippetsWith(DEFAULT_SETTINGS.snippetsSourceText, 1, next)).toBe('NEXT')
+      expect(migrateDefaultSnippetsWith(read('1.1.0-1.1.2.txt'), 1, next)).toBe(read('1.1.0-1.1.2.txt'))
+    })
+    it('修订号 2 或读不懂:一律不动', () => {
+      for (const rev of [2, 3, null]) expect(migrateDefaultSnippetsWith(DEFAULT_SETTINGS.snippetsSourceText, rev, next)).toBe(DEFAULT_SETTINGS.snippetsSourceText)
+    })
   })
   it('当前缺省、空库、自定义库原样不动', () => {
     for (const t of [DEFAULT_SETTINGS.snippetsSourceText, '[]', '', '[{trigger: "mk", replacement: "$$0$", options: "tA"}]']) {

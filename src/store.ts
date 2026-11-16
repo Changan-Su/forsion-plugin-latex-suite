@@ -1,7 +1,7 @@
 // Settings and snippets share one load/save path. Failed reads never replace a working library.
 import type { PluginContext } from '../types/forsion'
 import type { LatexSuiteSettings } from './settingsUi/model'
-import { DEFAULT_SETTINGS, DEFAULTS_REVISION, DEFAULTS_REVISION_KEY, mergeSettings, migrateDefaultSnippets, savedDefaultsRevision } from './settingsUi/model'
+import { DEFAULT_SETTINGS, DEFAULTS_REVISION, DEFAULTS_REVISION_KEY, mergeSettings, migrateDefaultSnippets, revisionToSave, savedDefaultsRevision } from './settingsUi/model'
 import { DEFAULT_SNIPPET_VARIABLES } from './snippets/variables'
 import { parseSnippets } from './snippets/parse'
 import { sortSnippets, type Snippet } from './snippets/model'
@@ -53,6 +53,8 @@ export function createStore(ctx: PluginContext): Store {
   let saveIssue: Issue | null = null
   let pendingPatch: Partial<LatexSuiteSettings> = {}
   let lastGood: LastGoodLibrary | null = null
+  /** 保存时写的修订号;成功读盘时按读到的定下(见 revisionToSave),读盘成功之前不会写盘。 */
+  let savedRevision: unknown = DEFAULTS_REVISION
   let hasUserUpdates = false
   let saveQueue: Promise<void> = Promise.resolve()
   let folderPaths: string[] = []
@@ -100,7 +102,8 @@ export function createStore(ctx: PluginContext): Store {
   const persist = (): void => {
     if (!loaded || disposed || !ctx.saveData) return
     // 修订号只随成功读盘之后的保存写下:从此这份设置里的片段库算用户在这一版里定过的,不再迁移。
-    const snapshot = { ...settings, ...(lastGood ? { latexSuiteLastGood: { ...lastGood } } : {}), [DEFAULTS_REVISION_KEY]: DEFAULTS_REVISION }
+    // 读到更大的或读不懂的,按读到的写回(见 revisionToSave)。
+    const snapshot = { ...settings, ...(lastGood ? { latexSuiteLastGood: { ...lastGood } } : {}), [DEFAULTS_REVISION_KEY]: savedRevision }
     // Serial saves prevent an older slow write from overwriting a newer setting.
     // Disposal stops new work, but writes already accepted from the UI still drain.
     saveQueue = saveQueue.then(async () => {
@@ -159,6 +162,7 @@ export function createStore(ctx: PluginContext): Store {
           fromDisk.snippetsSourceText = migrateDefaultSnippets(fromDisk.snippetsSourceText, revision)
         }
         settings = mergeSettings({ ...fromDisk, ...pendingPatch })
+        savedRevision = revisionToSave(saved)
         // Backups belong only to embedded user code. External files are always read fresh.
         const backup = saved?.latexSuiteLastGood as Partial<LastGoodLibrary> | undefined
         if (settings.snippetsSource === 'user' && !settings.loadSnippetVariablesFromFile && backup?.version === 1

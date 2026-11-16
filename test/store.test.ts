@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PluginContext } from '../types/forsion'
 import { createStore, type Store } from '../src/store'
-import { DEFAULT_SETTINGS, DEFAULTS_REVISION, DEFAULTS_REVISION_KEY, type LatexSuiteSettings } from '../src/settingsUi/model'
+import { DEFAULT_SETTINGS, DEFAULTS_REVISION, DEFAULTS_REVISION_KEY, migrateDefaultSnippetsWith, savedDefaultsRevision, textFingerprint, type LatexSuiteSettings } from '../src/settingsUi/model'
 import { matchSnippet } from '../src/snippets/model'
 
 const source = (trigger: string, replacement = trigger): string => JSON.stringify([{ trigger, replacement, options: 'mA' }])
@@ -284,6 +284,38 @@ describe('the default library migration happens only once', () => {
     const written = h.ctx.saveData.mock.calls.at(-1)![0] as Saved
     expect(written.snippetsSourceText).toBe(v11x)
     expect(written[DEFAULTS_REVISION_KEY]).toBe(DEFAULTS_REVISION)
+  })
+
+  // C4:下一版(修订号 2)里有意把片段库设成本版缺省原文;回退到本版改个设置;再升级到下一版。
+  it('a newer revision read from disk is written back, so the next release keeps a library set on purpose', async () => {
+    const next = { revision: 2, tables: { 0: { [textFingerprint(v11x)]: '1.1.0 - 1.1.2' }, 1: { [textFingerprint(DEFAULT_SETTINGS.snippetsSourceText)]: 'this release' } }, current: 'NEXT' }
+    const fromNext: Saved = {
+      snippetsSourceText: DEFAULT_SETTINGS.snippetsSourceText,
+      latexSuiteLastGood: { version: 1, snippetsSourceText: DEFAULT_SETTINGS.snippetsSourceText, snippetVariablesSourceText: '{}' },
+      [DEFAULTS_REVISION_KEY]: 2,
+    }
+    const upgrade = (saved: Saved) => [saved.snippetsSourceText as string, (saved.latexSuiteLastGood as Saved).snippetsSourceText as string]
+      .map((text) => migrateDefaultSnippetsWith(text, savedDefaultsRevision(saved), next))
+    // C4':回退的那次没存盘,文件原样,再升级不动。
+    expect(upgrade(fromNext)).toEqual([DEFAULT_SETTINGS.snippetsSourceText, DEFAULT_SETTINGS.snippetsSourceText])
+    const back = await boot(fromNext)
+    back.store.update({ concealEnabled: true })
+    await flush()
+    const saved = lastSaved(back.h)
+    expect(saved[DEFAULTS_REVISION_KEY]).toBe(2)
+    expect(upgrade(saved)).toEqual([DEFAULT_SETTINGS.snippetsSourceText, DEFAULT_SETTINGS.snippetsSourceText])
+  })
+
+  it('a revision it cannot read is written back as it was', async () => {
+    for (const odd of ['1', 1.5, -1, null, true, {}, []]) {
+      const { h, store } = await boot({ snippetsSourceText: v11x, [DEFAULTS_REVISION_KEY]: odd })
+      expect(store.settings().snippetsSourceText).toBe(v11x)
+      store.update({ concealEnabled: true })
+      await flush()
+      const saved = lastSaved(h)
+      expect(saved[DEFAULTS_REVISION_KEY]).toEqual(odd)
+      expect(saved.snippetsSourceText).toBe(v11x)
+    }
   })
 
   it('a failed read neither migrates nor writes, and a later successful read still migrates', async () => {
