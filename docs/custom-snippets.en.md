@@ -68,6 +68,7 @@ Under **Advanced**, edit the JSON object in **Snippet variables**, or configure 
 | `U` undo flag | You can keep it in imported snippets. Undo uses the Forsion editor's history. To immediately restore the full trigger of an automatic expansion, use **Backspace** or the restore trigger command. |
 | Functions returning LuaSnip-style nodes | Return a string with tabstops, or return `false` to skip the match. |
 | Vim shortcuts and multiple cursors for tabstops | Use the Forsion shortcuts. Matching tabstops mirror their text with a single cursor. |
+| The two `dm` default snippets (`(\S\s*)dm` and the list one) | They expand only when `dm` is a word of its own, at the start of a line or after whitespace. Words such as admin in prose or roadmap in a list item do not turn into block math. A library copied from Obsidian keeps the upstream rules; to match, edit these two snippets as described in the [changelog](changelog.en.md). |
 | Math across paragraphs and revealing individual LaTeX constructs | Keep multiline block math within one text block. With conceal enabled, entering an equation reveals its whole source. |
 
 See [Obsidian LaTeX Suite 1.12.8 documentation](https://github.com/artisticat1/obsidian-latex-suite/blob/8498f43/DOCS.md) for the upstream syntax.

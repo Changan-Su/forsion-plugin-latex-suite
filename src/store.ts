@@ -150,6 +150,7 @@ export function createStore(ctx: PluginContext): Store {
           throw new Error('Invalid saved settings')
         }
         settings = mergeSettings({ ...(saved ?? {}), ...pendingPatch })
+        // 只在读成功之后:逐字等于某个已发布版本缺省库的,换成当前缺省(只改内存,下次保存时随整份设置写回)。
         settings.snippetsSourceText = restoreLegacyDefaultSnippets(settings.snippetsSourceText)
         // Backups belong only to embedded user code. External files are always read fresh.
         const backup = saved?.latexSuiteLastGood as Partial<LastGoodLibrary> | undefined
@@ -159,10 +160,12 @@ export function createStore(ctx: PluginContext): Store {
             const variables = JSON.parse(backup.snippetVariablesSourceText) as unknown
             if (!variables || typeof variables !== 'object' || Array.isArray(variables)
               || Object.values(variables).some((value) => typeof value !== 'string')) throw new Error('Invalid backup variables')
-            const recovered = parseSnippets(backup.snippetsSourceText, { ...DEFAULT_SNIPPET_VARIABLES, ...variables as Record<string, string> })
+            // 备份若也是某个已发布版本的缺省库,同样换成新缺省,别让旧缺省从备份里复活。
+            const backupText = restoreLegacyDefaultSnippets(backup.snippetsSourceText)
+            const recovered = parseSnippets(backupText, { ...DEFAULT_SNIPPET_VARIABLES, ...variables as Record<string, string> })
             if (!recovered.errors.length) {
               active = recovered.snippets
-              lastGood = backup as LastGoodLibrary
+              lastGood = { ...backup as LastGoodLibrary, snippetsSourceText: backupText }
             }
           } catch { /* Ignore invalid backup metadata; never rewrite the user's draft. */ }
         }

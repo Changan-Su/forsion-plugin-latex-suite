@@ -126,15 +126,15 @@ describe('S1 列表里的 dm 只认真列表项', () => {
     r.type('dmap')
     expect(r.text()).toBe('1. Roadmap')
   })
-  it('真列表项里照上游展开(词中也展开,上游此片段不看词边界),行里的标记保留、不带缩进', () => {
-    const r = rig('olist', ['see ', { text: 'docs', marks: [link] }, ' and ', { text: 'bold', marks: [strong] }, ' roa'])
+  it('真列表项里独立的 dm 照常展开,行里的标记保留、不带缩进', () => {
+    const r = rig('olist', ['see ', { text: 'docs', marks: [link] }, ' and ', { text: 'bold', marks: [strong] }, ' '])
     r.type('dm')
-    expect(r.text()).toBe('see docs and bold roa\n$$\n\n$$')
+    expect(r.text()).toBe('see docs and bold \n$$\n\n$$')
     expect(r.hrefs()).toEqual(['https://example.com/x'])
     expect(r.marked('strong')).toBe('bold')
-    const b = rig('blist', ['Roa'])
+    const b = rig('blist', [''])
     b.type('dm')
-    expect(b.text()).toBe('Roa\n$$\n\n$$')
+    expect(b.text()).toBe('\n$$\n\n$$')
   })
 })
 
@@ -160,21 +160,51 @@ describe('S2 dm 的词边界看光标后面的字符', () => {
   })
 })
 
-describe('含 dm 的常见单词(与真 Obsidian 逐条对过)', () => {
-  // Obsidian 1.15.1 + Latex Suite 1.12.8 缺省设置:段末或后面是空格时,`admin` 在打出 m 时展开成块级公式
-  // (`(\S\s*)dm` 片段,a 前面是空格);`landmark`、`headmaster` 不展开;紧贴下一个词前面打 admin 不展开。
+describe('dm 只在独立成词时展开(与 Obsidian 不同,有意为之)', () => {
+  // 真 Obsidian 1.15.1 + Latex Suite 1.12.8 缺省设置下,段末或空格前打 admin 会在打出 m 时变成块级公式
+  // (`(\S\s*)dm`),列表项里含 dm 的词(roadmap、landmark)也会。Forsion 的缺省片段改成 dm 前面必须是
+  // 行首或空白:含 dm 的单词一律不展开,独立的 dm 照旧。以 dm 开头的词(dmesg)打到 m 时仍会展开。
+  const words = ['admin', 'admit', 'Admiral', 'landmark', 'headmaster']
+  it.each(words)('段落末尾打 %s 不展开', (w) => {
+    const r = rig('paragraph', ['Para text'])
+    r.type(` ${w}`)
+    expect(r.text()).toBe(`Para text ${w}`)
+  })
+  it.each(words)('行中间(后面是空格)打 %s 不展开', (w) => {
+    const r = rig('paragraph', ['Para text| here.'])
+    r.type(` ${w}`)
+    expect(r.text()).toBe(`Para text ${w} here.`)
+  })
+  it('列表项里打 roadmap、landmark 不展开,行里的标记原样', () => {
+    const a = rig('blist', ['Roa'])
+    a.type('dmap')
+    expect(a.text()).toBe('Roadmap')
+    const b = rig('blist', ['Para text'])
+    b.type(' landmark')
+    expect(b.text()).toBe('Para text landmark')
+    const c = rig('olist', ['see ', { text: 'docs', marks: [link] }, ' and ', { text: 'bold', marks: [strong] }, ' roa'])
+    c.type('dmap')
+    expect(c.text()).toBe('see docs and bold roadmap')
+    expect(c.hrefs()).toEqual(['https://example.com/x'])
+    expect(c.marked('strong')).toBe('bold')
+  })
   it.each([
-    ['Para text', ' admin', 'Para text a\n$$\nin\n$$'],
-    ['Para text', ' landmark', 'Para text landmark'],
-    ['Para text', ' headmaster', 'Para text headmaster'],
-    ['Para text| here.', ' admin', 'Para text a\n$$\nin\n$$ here.'],
-    ['Para text| here.', ' landmark', 'Para text landmark here.'],
-    ['Para text| here.', ' headmaster', 'Para text headmaster here.'],
-    ['Para text |here.', 'admin', 'Para text adminhere.'],
-  ])('%s + %j', (seed, typed, want) => {
-    const r = rig('paragraph', [seed])
+    ['paragraph', 'hello ', 'dm', 'hello $$\n\n$$'],
+    ['paragraph', 'text', ' dm', 'text $$\n\n$$'],
+    ['paragraph', 'send a', ' dm', 'send a \n$$\n\n$$'],
+    ['paragraph', 'Para text| here.', ' dm', 'Para text $$\n\n$$ here.'],
+    ['blist', '文字', ' dm', '文字 \n$$\n\n$$'],
+    ['blist', '', 'dm', '\n$$\n\n$$'],
+    ['paragraph', 'hello ', 'mk', 'hello $$'],
+  ] as [Block, string, string, string][])('独立的 dm / mk 照常展开:%s %j + %j', (block, seed, typed, want) => {
+    const r = rig(block, seed ? [seed] : [])
     r.type(typed)
     expect(r.text()).toBe(want)
+  })
+  it('残留:以 dm 开头的词在打到 m 时仍会展开(dmesg)', () => {
+    const r = rig('paragraph', ['Para text'])
+    r.type(' dmesg')
+    expect(r.text()).toBe('Para text $$\nesg\n$$')
   })
 })
 
@@ -185,21 +215,22 @@ const nd = (t: string, ...c: PmNode[]) => schema.node(t, null, c)
 const tx = (s: string) => schema.text(s)
 
 describe('F3 列表里的 dm 只认列表项的第一个段落', () => {
-  it('同一项的第二段里打 roadmap 不展开', () => {
-    const r = rigDoc(nd('doc', nd('bullet_list', nd('list_item', nd('paragraph', tx('first')), nd('paragraph', tx('second roa§'))))))
-    r.type('dmap')
-    expect(r.blocks()).toEqual(['first', 'second roadmap'])
-  })
-  it('列表项里的表格单元格里打 roadmap 不展开', () => {
-    const r = rigDoc(nd('doc', nd('bullet_list', nd('list_item', nd('paragraph', tx('first')),
-      nd('table', nd('table_row', nd('table_cell', nd('paragraph', tx('roa§'))), nd('table_cell', nd('paragraph', tx('x')))))))))
-    r.type('dmap')
-    expect(r.blocks()).toEqual(['first', 'roadmap', 'x'])
-  })
-  it('嵌套列表项的第一个段落照常展开', () => {
-    const r = rigDoc(nd('doc', nd('bullet_list', nd('list_item', nd('paragraph', tx('outer')), nd('bullet_list', nd('list_item', nd('paragraph', tx('inner roa§'))))))))
+  // 用独立的 dm:列表片段出的是「前文⏎$$」,普通 dm 出的是「前文 $$」,两者分得开。
+  it('同一项的第二段里打 dm 走普通 dm,不出列表块公式', () => {
+    const r = rigDoc(nd('doc', nd('bullet_list', nd('list_item', nd('paragraph', tx('first')), nd('paragraph', tx('second §'))))))
     r.type('dm')
-    expect(r.blocks()).toEqual(['outer', 'inner roa⏎$$⏎⏎$$'])
+    expect(r.blocks()).toEqual(['first', 'second $$⏎⏎$$'])
+  })
+  it('列表项里的表格单元格里打 dm 走普通 dm', () => {
+    const r = rigDoc(nd('doc', nd('bullet_list', nd('list_item', nd('paragraph', tx('first')),
+      nd('table', nd('table_row', nd('table_cell', nd('paragraph', tx('xy §'))), nd('table_cell', nd('paragraph', tx('y')))))))))
+    r.type('dm')
+    expect(r.blocks()).toEqual(['first', 'xy $$⏎⏎$$', 'y'])
+  })
+  it('嵌套列表项的第一个段落出列表块公式', () => {
+    const r = rigDoc(nd('doc', nd('bullet_list', nd('list_item', nd('paragraph', tx('outer')), nd('bullet_list', nd('list_item', nd('paragraph', tx('inner §'))))))))
+    r.type('dm')
+    expect(r.blocks()).toEqual(['outer', 'inner ⏎$$⏎⏎$$'])
   })
 })
 

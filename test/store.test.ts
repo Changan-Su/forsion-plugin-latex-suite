@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PluginContext } from '../types/forsion'
 import { createStore, type Store } from '../src/store'
@@ -150,6 +153,56 @@ describe('settings initialization and persistence', () => {
     await store.reload()
     await flush()
     expect(h.ctx.saveData).toHaveBeenCalledTimes(count)
+  })
+})
+
+describe('released default snippet libraries are upgraded on load', () => {
+  const fixture = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures/default-snippets/1.0.0.txt'), 'utf8')
+  const others: Partial<LatexSuiteSettings> = { proseSnippetsEnabled: false, wordDelimiters: '., ', snippetRecursion: 7, concealEnabled: true }
+  const dmTriggers = (store: Store): string[] => store.snippets().filter((s) => s.trigger instanceof RegExp && s.trigger.source.includes('dm')).map((s) => (s.trigger as RegExp).source)
+
+  it('a library equal to a released default becomes the new default; other settings stay; nothing is written', async () => {
+    const h = harness({ ...others, snippetsSourceText: fixture })
+    const store = h.start()
+    await flush()
+    expect(store.ready()).toBe(true)
+    expect(store.settings().snippetsSourceText).not.toBe(fixture)
+    expect(store.settings()).toMatchObject(others)
+    expect(dmTriggers(store).some((t) => t.includes('(\\S\\s+)dm'))).toBe(true)
+    expect(dmTriggers(store).some((t) => t.includes('(\\S\\s*)dm'))).toBe(false)
+    expect(h.ctx.saveData).not.toHaveBeenCalled()
+  })
+
+  it('a last-good backup that is a released default is upgraded too', async () => {
+    const h = harness({ snippetsSourceText: '[{trigger: "broken"', latexSuiteLastGood: { version: 1, snippetsSourceText: fixture, snippetVariablesSourceText: '{}' } } as never)
+    const store = h.start()
+    await flush()
+    expect(dmTriggers(store).some((t) => t.includes('(\\S\\s+)dm'))).toBe(true)
+    expect(dmTriggers(store).some((t) => t.includes('(\\S\\s*)dm'))).toBe(false)
+    expect(h.ctx.saveData).not.toHaveBeenCalled()
+  })
+
+  it('an edited library is kept as written', async () => {
+    const edited = fixture.replace('description: "Display math when in a list"', 'description: "My list math"')
+    expect(edited).not.toBe(fixture)
+    const h = harness({ ...others, snippetsSourceText: edited })
+    const store = h.start()
+    await flush()
+    expect(store.settings().snippetsSourceText).toBe(edited)
+    expect(dmTriggers(store).some((t) => t.includes('(\\S\\s*)dm'))).toBe(true)
+  })
+
+  it('unreadable or invalid saved settings are not migrated or written', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    for (const fail of [() => Promise.reject(new Error('disk unavailable')), async () => [fixture], async () => 'garbage']) {
+      const h = harness({ snippetsSourceText: fixture })
+      h.ctx.loadData.mockImplementationOnce(fail as never)
+      const store = h.start()
+      await flush()
+      expect(store.ready()).toBe(false)
+      expect(store.snippets()).toEqual([])
+      expect(h.ctx.saveData).not.toHaveBeenCalled()
+    }
   })
 })
 

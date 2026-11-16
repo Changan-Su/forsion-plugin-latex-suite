@@ -3,8 +3,11 @@
 // 为什么这条值得钉死:defaults.ts 是带正则字面量和函数的 TS 数组,设置面板里编辑的却是文本,
 // 中间靠 serializeRawSnippets 转一道。这一步一旦漂了(比如有人顺手改成 JSON.stringify),
 // 用户点「恢复默认」拿到的会是一份 `{}` 满地的废片段库 —— 而且要等到他真去点才发现。
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_SETTINGS, mergeSettings, restoreLegacyDefaultSnippets, serializeRawSnippets, splitList } from '../src/settingsUi/model'
+import { DEFAULT_SETTINGS, mergeSettings, restoreLegacyDefaultSnippets, serializeRawSnippets, splitList, textFingerprint } from '../src/settingsUi/model'
 import { DEFAULT_SNIPPETS } from '../src/snippets/defaults'
 import { evalSnippetSource, parseSnippets } from '../src/snippets/parse'
 import { DEFAULT_SNIPPET_VARIABLES } from '../src/snippets/variables'
@@ -60,12 +63,37 @@ describe('默认片段库的文本形态', () => {
       .toEqual(DEFAULT_SNIPPETS.filter((s) => s.excludedMacros?.length).map((s) => s.excludedMacros))
   })
 
-  it('只修复逐字一致的旧默认库，不覆盖自定义片段', () => {
-    const legacy = serializeRawSnippets(DEFAULT_SNIPPETS.map(({ excludedMacros: _omitted, ...snippet }) => snippet))
-    expect(restoreLegacyDefaultSnippets(legacy)).toBe(DEFAULT_SETTINGS.snippetsSourceText)
-    const custom = `${legacy}\n// my custom copy`
-    expect(restoreLegacyDefaultSnippets(custom)).toBe(custom)
-    expect(restoreLegacyDefaultSnippets('[]')).toBe('[]')
+})
+
+// 已发布版本写进用户设置的缺省片段库(各版 main.js 运行时序列化出来的原文,函数体是压缩后的)。
+// 只有逐字等于其中之一才换成新缺省;改过一个字的一律原样。
+describe('旧版缺省片段库升级到新缺省', () => {
+  const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures/default-snippets')
+  const released = ['1.0.0.txt', '1.0.0-reset.txt', '1.1.0-1.1.2.txt']
+  const read = (name: string) => readFileSync(path.join(dir, name), 'utf8')
+  it.each(released)('%s 逐字相同 → 换成新缺省', (name) => {
+    expect(restoreLegacyDefaultSnippets(read(name))).toBe(DEFAULT_SETTINGS.snippetsSourceText)
+  })
+  it.each(released)('%s 改过一个字、多一个换行、删一条 → 原样不动', (name) => {
+    const text = read(name)
+    const i = text.indexOf('mk')
+    const edited = [text.slice(0, i) + 'mK' + text.slice(i + 2), `${text}\n`, text.replace(/\n[^\n]*\n/, '\n')]
+    for (const e of edited) expect(restoreLegacyDefaultSnippets(e)).toBe(e)
+  })
+  it('源码里登记的指纹就是这几份原文的指纹', () => {
+    expect(released.map((n) => textFingerprint(read(n)))).toEqual(['16070:dt9o15zarg', '16070:27f1a4kcj2g', '16123:1tpdwu6y71w'])
+  })
+  it('当前缺省、空库、自定义库原样不动', () => {
+    for (const t of [DEFAULT_SETTINGS.snippetsSourceText, '[]', '', '[{trigger: "mk", replacement: "$$0$", options: "tA"}]']) {
+      expect(restoreLegacyDefaultSnippets(t)).toBe(t)
+    }
+  })
+  it('新缺省里 dm 两条要求独立成词', () => {
+    const t = DEFAULT_SETTINGS.snippetsSourceText
+    expect(t).toContain('/(\\S\\s+)dm/')
+    expect(t).not.toContain('/(\\S\\s*)dm/')
+    expect(t).toContain('(?<text>(?:.*\\s)?)dm/')
+    for (const name of released) expect(read(name)).toContain('/(\\S\\s*)dm/')
   })
 })
 

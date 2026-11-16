@@ -207,18 +207,36 @@ export function mergeSettings(raw: unknown): LatexSuiteSettings {
   return out
 }
 
-/** 只修复逐字匹配的旧版默认文本；用户编辑过的片段库绝不猜测或覆盖。 */
+/** 53 位字符串指纹(cyrb53)。只用来认「是不是某个已发布版本的缺省库原文」,不做安全用途。 */
+export function textFingerprint(text: string): string {
+  let h1 = 0xdeadbeef
+  let h2 = 0x41c6ce57
+  for (let i = 0; i < text.length; i++) {
+    const ch = text.charCodeAt(i)
+    h1 = Math.imul(h1 ^ ch, 2654435761)
+    h2 = Math.imul(h2 ^ ch, 1597334677)
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909)
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909)
+  return `${text.length}:${(4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36)}`
+}
+
+/**
+ * 已发布版本写进用户设置的缺省片段库(各版 main.js 运行时序列化出来的原文,函数体是压缩后的)。
+ * 插件每次保存都写整份设置,没动过片段库的用户,设置里存的就是当时那一版的缺省原文;只改 defaults.ts
+ * 对他们不起作用。原文存在 test/fixtures/default-snippets(单测核对这里的指纹),这里只留长度 + 指纹。
+ * ⚠️改 defaults.ts 之前,先把**当前已发布版本**的原文补进去并在这里登记。
+ */
+const RELEASED_DEFAULT_SNIPPETS: Record<string, string> = {
+  '16070:dt9o15zarg': '1.0.0',
+  '16070:27f1a4kcj2g': '1.0.0 reset',
+  '16123:1tpdwu6y71w': '1.1.0 - 1.1.2',
+}
+
+/** 片段库逐字等于某个已发布版本的缺省库 → 换成当前缺省;用户改过的(哪怕一个字)原样返回。 */
 export function restoreLegacyDefaultSnippets(source: string): string {
-  const legacy = DEFAULT_SNIPPETS.map(({ excludedMacros: _excluded, ...snippet }) => snippet)
-  const oldSerialized = serializeRawSnippets(legacy)
-  const oldReset = `[\n${legacy.map((s) => {
-    const parts = [`trigger: ${jsValue(s.trigger)}`, `replacement: ${jsValue(s.replacement)}`]
-    if (s.options) parts.push(`options: ${JSON.stringify(s.options)}`)
-    if (s.priority) parts.push(`priority: ${s.priority}`)
-    if (s.description) parts.push(`description: ${JSON.stringify(s.description)}`)
-    return `  {${parts.join(', ')}}`
-  }).join(',\n')}\n]\n`
-  return source === oldSerialized || source === oldReset ? DEFAULT_SETTINGS.snippetsSourceText : source
+  if (typeof source !== 'string' || source === DEFAULT_SETTINGS.snippetsSourceText) return source
+  return RELEASED_DEFAULT_SNIPPETS[textFingerprint(source)] ? DEFAULT_SETTINGS.snippetsSourceText : source
 }
 
 /** `"sum, int, frac"` → `['sum', 'int', 'frac']`(上游 strToArray:先去掉**全部**空白再切)。 */

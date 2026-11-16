@@ -3,13 +3,17 @@
 // 格式与上游完全一致,用户写自己的片段时抄这里的样子即可。
 // ⚠️本文件是上游数据表的**逐条拷贝**。下面若干处 `function (this: {trigger: RegExp}, match: RegExpExecArray)`
 // 与 `const arr: number[][]` 是**只加类型标注**,语义一个字未动 —— 上游是 .js,这里要过 strict。
+// 唯一有意的改动:两条 dm 只在 dm 独立成词(前面是行首或空白)时展开,见那两条旁边的注释。
+// 改了这里的任何条目,都要把上一个已发布版本的缺省库原文补进 test/fixtures/default-snippets,
+// 并在 settingsUi/model.ts 的 RELEASED_DEFAULT_SNIPPETS 里登记,老用户的片段库才会跟着升级。
 import type { RawSnippet } from './parse'
 
 export const DEFAULT_SNIPPETS: RawSnippet[] = [
     // Math mode
 	{trigger: "mk", replacement: "$$0$", options: "tA"},
     {trigger: "dm", replacement: "$$\n$0\n$$", options: "tAw"},
-	{trigger: /(\S\s*)dm/, replacement: "[[0]]\n$$\n$0\n$$", options: "tAw", priority: 1},
+	// 与上游不同(用户定):上游是 `(\S\s*)dm`,正文里打 admin、admit、Admiral 会在打出 m 时变成公式块。
+	{trigger: /(\S\s+)dm/, replacement: "[[0]]\n$$\n$0\n$$", options: "tAw", priority: 1},
 
 	{trigger: /([^\\])beg/, replacement: "[[0]]\\begin{$0}\n$1\n\\end{$0}", options: "MA"},
 	{trigger: /([^\\])beg/, replacement: "[[0]]\\begin{$0} $1 \\end{$0}", options: "nA"},
@@ -428,7 +432,8 @@ export const DEFAULT_SNIPPETS: RawSnippet[] = [
 		return output;
 	}, options: "mA", description: "N x N identity matrix"},
 	{
-		trigger: /(?<positive_lookbehind>(?:\n|^)[ \t]*>*)(?<marker>\d+[.)]|[-*+])(?<whitespace>[ \t]+)(?<text>.*)dm/,
+		// 与上游不同(用户定):上游的 `(?<text>.*)dm` 在列表项里遇到 roadmap、landmark 也会展开。
+		trigger: /(?<positive_lookbehind>(?:\n|^)[ \t]*>*)(?<marker>\d+[.)]|[-*+])(?<whitespace>[ \t]+)(?<text>(?:.*\s)?)dm/,
 		replacement: (m) => {
 			const { positive_lookbehind, whitespace, text, marker } = m.groups;
 			const firstLine = marker + whitespace + text;
