@@ -75,3 +75,10 @@ describe('C: 同号格里的自动分式,各份都得到分式', () => {
     expect(r.all()).toBe('$$ \\y{\\hat{x}y}{\\hat{x}y} $$')
   })
 })
+describe('E: 同号格里打会带上前一个字符的正则片段,不把格外的括号抄过去', () => {
+  it('E1 outer 里打 phi', () => {
+    const r = rig('$$ | $$')
+    r.run('outer', 'phi')
+    expect(r.all()).toBe('$$ \\ket{\\phi} \\bra{\\phi}  $$')
+  })
+})
