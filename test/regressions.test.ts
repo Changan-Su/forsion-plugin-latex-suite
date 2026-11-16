@@ -1,6 +1,7 @@
 // 评审复现过的回归(期望 = 上游语义:点击后只剩一个光标;自动分式在每个光标处各做一次)。
 import { describe, expect, it } from 'vitest'
 import { rig } from './regressionRig'
+import { DEFAULT_SNIPPETS } from '../src/snippets/defaults'
 
 describe('A: 自动分式一次吞掉当前格前面两组以上时,Tab 不能来回打转', () => {
   it('A1 ( hat x Tab _ 1 Tab / 2,之后三次 Tab 依次出括号、出公式', () => {
@@ -80,5 +81,52 @@ describe('E: 同号格里打会带上前一个字符的正则片段,不把格外
     const r = rig('$$ | $$')
     r.run('outer', 'phi')
     expect(r.all()).toBe('$$ \\ket{\\phi} \\bra{\\phi}  $$')
+  })
+})
+
+describe('F1: 编辑把光标带进别的组时不联动(联动只跟着插件自己放进去的那一组)', () => {
+  it('F1a parn:Tab 到 y 后退格退回指数里,分母里那份的 2 不被删', () => {
+    const r = rig('$$ | $$')
+    r.run('parn', '2', 'Tab', 'BS', 'BS', 'BS', 'BS')
+    expect(r.all()).toBe('$$ \\frac{ \\partial^{ }{ \\partial x^{2} }  $$')
+  })
+  it('F1b tayl:点在同一份里连按 7 次退格,其余各份的 g、t 留着', () => {
+    const r = rig('$$ | $$')
+    r.run('tayl', 'g', 'Tab', 't', 'Tab', 'k', 'click:g(t + k', 'BS', 'BS', 'BS', 'BS', 'BS', 'BS', 'BS')
+    expect(r.all()).toContain("g(t) + g'(t)")
+  })
+})
+
+describe('F2: 同号格里打出的分式,分式的格各含每一份(上游每个光标各排一次,按编号合组)', () => {
+  it('F2a tayl:g/2,Tab Tab 再 Shift+Tab 两次回分母打 3,四份一起变', () => {
+    const r = rig('$$ | $$')
+    r.run('tayl', 'g', '/', '2', 'Tab', 'Tab', 'S-Tab', 'S-Tab', '3')
+    expect(r.all()).toBe("$$ \\frac{g}{3}(x + h) = \\frac{g}{3}(x) + \\frac{g}{3}'(x)h + \\frac{g}{3}''(x) \\frac{h^{2}}{2!} + \\dots $$")
+  })
+  const W = [{ trigger: 'ww', replacement: '\\y{$0}{$0} $1 $2', options: 'mA' }]
+  it('F2b 两份:回到分母改字,两份一起改', () => {
+    const r = rig('$$ | $$', {}, W)
+    r.run('ww', 'a', '/', 'b', 'Tab', 'Tab', 'S-Tab', 'S-Tab', 'X')
+    expect(r.all()).toContain('\\y{\\frac{a}{X}}{\\frac{a}{X}}')
+  })
+  it('F2c 两份:回到分式后面接着打,两份一起长', () => {
+    const r = rig('$$ | $$', {}, W)
+    r.run('ww', 'a', '/', 'b', 'Tab', 'Tab', 'S-Tab', 'X')
+    expect(r.all()).toContain('\\y{\\frac{a}{b}X}{\\frac{a}{b}X}')
+  })
+  it('F2d 两份:下标 Tab 出来再打分式,两份都得到分式(补到各份的格里再展开,外层那份照常跟)', () => {
+    const r = rig('$$ | $$', {}, [...W, ...DEFAULT_SNIPPETS])
+    r.run('ww', '_', 'Tab', '/', 'b')
+    expect(r.all()).toContain('\\y{\\frac{_{}}{b}}{\\frac{_{}}{b}}')
+  })
+})
+
+describe('G: 同号格的某一份紧贴着别的格时,Tab 也不来回打转(上游多光标不会落回前面的组)', () => {
+  it('G1 两份的 $1 后面紧跟 $0:删掉右括号后连按 Tab 能走出去', () => {
+    const r = rig('$$ | $$', {}, [{ trigger: 'vv', replacement: '[${1:foo}] [${1:foo}$0]$2', options: 'mA' }, { trigger: 'ww', replacement: '\\y{$0}{$0} $1 $2', options: 'mA' }])
+    r.run('ww', 'vv', '→', 'BS')
+    const seen: string[] = []
+    for (let i = 0; i < 12 && r.hasActive(); i++) seen.push(r.run('Tab'))
+    expect(r.hasActive(), seen.join('\n')).toBe(false)
   })
 })

@@ -15,6 +15,9 @@
 //  ④ Tab = 下一组:目标组包住当前选区就把光标放到它的末端,否则选中整格(空格就是放光标);
 //     落点与当前选区相同就再往后找。找不到就返回 false,让这次 Tab 去做矩阵 / 跳出公式。
 //     Shift+Tab 对称;第一组再往前 = 返回 false 交还编辑器,表原样保留。
+//     Tab 落位后下标直接取目标组,不按光标重算:上游选中的是这组的**每一处**(多光标),只有这一组
+//     包得住;这里只有一个光标放在第一处,那一处要是同时贴着前面某组的格,重算会落回前面那组。
+//     ⚠️曾经重算:同号格的某一份紧贴着别的格(`[${1:foo}$0]`)时,Tab 在两处之间来回跳出不去。
 //  ⑤ 位置映射:所有格两端都向外长(上游 mark 的 inclusive),紧贴格边的输入都算进格里。
 //     空格只在被一次删除「跨过去」时才淘汰(上游 MapMode.TrackDel)。
 //     ⚠️曾经用「两端都落在删除里就淘汰」判空格:自动放大括号把 `)` 换成 ` \right)` 时,
@@ -29,11 +32,16 @@
 //     鼠标点、方向键把光标挪到**另一处**(哪怕是同组的另一份)就停止联动 —— 上游点击会把多光标
 //     收成一个,之后只改那一处。⚠️曾经「选区一变就按新下标联动」:点进同组的第二份、打一个字,
 //     其余几份(含用户自己填的内容)被整段改写。下标照样跟着选区重算(Tab 从哪接着走),联动不跟。
+//     编辑(退格、删选区)把光标带进**别的组**或同组的另一份,同样停止联动。⚠️曾经只在「文档没变」
+//     的事务里判:Tab 到单处的格再退格退进前面的同号格,那组从没被插件放过光标却开始联动,别处一起被删。
 //  ⑧ 清表时如果最后落到的组有多处,而且是 Tab / 展开落上去的,留一份「镜像余组」(不画、不参与
 //     跳位),光标离开那一处之前继续联动。
 //  ⑨ 在联动着的多处组里再展开片段(含 `/` 自动分式):上游会在每一处各展开一次。这里只在光标那处
 //     展开,外层这组转成镜像余组,把这一处的新内容整段抄到其它各处,新片段的格照常跳。
 //     ⚠️曾经直接把外层组替换掉:其余几份停在旧值,之后再也追不上。
+//     抄完以后,新片段的每个格按相对位置**补上其它各份里的那一处**(上游各光标各展开一次、按编号
+//     合组,`\frac{g}{$1}$2` 的格各含 N 处)。⚠️曾经只建在第一份里:Tab 出去再 Shift+Tab 回分母
+//     改字,只改第一份,其余几份停在旧值。
 
 import type { EditorState, Plugin, PluginKey, Transaction } from 'prosemirror-state'
 import type { DecorationSet, EditorView } from 'prosemirror-view'
@@ -58,6 +66,8 @@ export interface Group {
   color: number
   /** 上游的 hidden:表里第一组在第一次选区变化后不再画。 */
   hidden: boolean
+  /** 在镜像余组的某一份里展开出来、还没补上其它各份的格(见文件头 ⑨)。 */
+  spread?: true
 }
 
 export interface TabstopSnapshot {
@@ -108,6 +118,20 @@ function groupContains(g: { ranges: Range[] }, from: number, to: number): boolea
 /** 包住选区的第一处位点的序号;都不包 = -1。 */
 function rangeIndexOf(ranges: Range[], from: number, to: number): number {
   return ranges.findIndex((r) => r.from <= from && r.to >= to)
+}
+
+/** 选区移动前后是不是还在同一组位点的同一份里:份数变了(有一份被删掉)也算不是。 */
+function sameCopy(before: Range[] | undefined, after: Range[] | undefined, old: Range, now: Range): boolean {
+  if (!before || !after || before.length !== after.length) return false
+  const a = rangeIndexOf(before, old.from, old.to)
+  return a >= 0 && a === rangeIndexOf(after, now.from, now.to)
+}
+
+/** ranges 是否在 copies 里一份一处(各落在不同的一份里,份数相同)。 */
+function onePerCopy(ranges: Range[], copies: Range[]): boolean {
+  if (ranges.length !== copies.length) return false
+  const hit = new Set(ranges.map((r) => rangeIndexOf(copies, r.from, r.to)))
+  return !hit.has(-1) && hit.size === copies.length
 }
 
 /** 第一个包住选区的组;一个都不包 = 表长(上游 getCurrentTabstopGroupIndex)。 */
@@ -168,6 +192,21 @@ export function createTabstops(pm: PmToolkit): TabstopApi {
     return { from: a.pos, to: b.pos }
   }
 
+  /** 见文件头 ⑨:镜像刚把某一份的内容抄到其它各份,把那一份里新建的格按相对位置补到内容相同的各份里。 */
+  const spreadRanges = (ranges: Range[], copies: Range[], doc: Transaction['doc']): Range[] => {
+    const out: Range[] = []
+    for (const r of ranges) {
+      const k = rangeIndexOf(copies, r.from, r.to)
+      if (k < 0) { out.push(r); continue }
+      const src = doc.slice(copies[k].from, copies[k].to)
+      for (const [j, c] of copies.entries()) {
+        if (j === k) out.push(r)
+        else if (doc.slice(c.from, c.to).eq(src)) out.push({ from: c.from + (r.from - copies[k].from), to: c.from + (r.to - copies[k].from) })
+      }
+    }
+    return out.sort((a, b) => a.from - b.from)
+  }
+
   const mapRanges = (ranges: Range[], tr: Transaction, exclusive = false): Range[] => {
     const out: Range[] = []
     for (const r of ranges) {
@@ -187,12 +226,17 @@ export function createTabstops(pm: PmToolkit): TabstopApi {
         // 曾经边比较边减:一笔事务吞掉当前组前面两组时只减了一次,新片段被插到错的位置,
         // 旧的当前格留在表里,Tab 在两处之间来回跳出不去。
         const cur = index
+        /** 事务前的当前组映射过来的样子;没了 = undefined。 */
+        let curKept: Group | undefined = groups[cur]
         if (tr.docChanged) {
           const kept: Group[] = []
+          curKept = undefined
           for (const [i, g] of groups.entries()) {
             const ranges = mapRanges(g.ranges, tr, i !== cur && g.ranges.length > 1)
-            if (ranges.length) kept.push({ ...g, ranges })
-            else if (i < cur) index-- // 当前组前面少了一组,下标跟着挪
+            if (ranges.length) {
+              kept.push({ ...g, ranges })
+              if (i === cur) curKept = kept[kept.length - 1]
+            } else if (i < cur) index-- // 当前组前面少了一组,下标跟着挪
           }
           groups = kept
           if (index >= groups.length) index = Math.max(0, groups.length - 1)
@@ -203,48 +247,62 @@ export function createTabstops(pm: PmToolkit): TabstopApi {
         }
 
         const meta = tr.getMeta(key) as
-          | { add?: DocGroup[]; clear?: true; restore?: TabstopSnapshot; nav?: true }
+          | { add?: DocGroup[]; clear?: true; restore?: TabstopSnapshot; nav?: number }
           | 'mirror'
           | undefined
         /** 这笔事务的选区是插件自己放的(展开、Tab 落位)。 */
         let placed = false
+        /** Tab / Shift+Tab 落到的组(见文件头 ④)。 */
+        let navTo: number | undefined
+        const restored = !!(meta && meta !== 'mirror' && meta.restore)
+        if (meta === 'mirror' && mirror && groups.some((g) => g.spread)) {
+          const copies = mirror
+          groups = groups.map((g) => {
+            if (!g.spread) return g
+            const { spread: _done, ...rest } = g
+            return { ...rest, ranges: spreadRanges(g.ranges, copies, tr.doc) }
+          })
+        }
         if (meta && meta !== 'mirror') {
           if (meta.clear) ({ groups, index, color, mirror, linked } = EMPTY)
           if (meta.restore) ({ groups, index, color, mirror, linked } = meta.restore)
           if (meta.add?.length) {
             // 见文件头 ⑨:在联动着的多处组里展开,外层组转成镜像余组。
+            // 已有的镜像余组每一份里恰好各有外层组的一处(外层组本身就是从镜像里补出来的),整份照抄已经
+            // 带上外层组,留着更外的那层;换成外层组反而丢了外面那层(`_` Tab `/` 之后另一份不再跟)。
             const outer = groups[index]
-            if (linked && outer && outer.ranges.length > 1) mirror = outer.ranges
+            if (linked && outer && outer.ranges.length > 1 && !(mirror && onePerCopy(outer.ranges, mirror))) mirror = outer.ranges
             const c = color % N_COLORS
             color++
-            const added: Group[] = meta.add.map((g) => ({ ranges: g.ranges, color: c, hidden: false }))
+            // 光标那一份之外还有内容要跟着抄的(外层刚转成镜像余组,或本来就在镜像余组里),新格等抄完再补到各份。
+            const copies = mirror
+            const inCopy = (g: DocGroup) => !!copies && g.ranges.length > 0 && g.ranges.every((r) => rangeIndexOf(copies, r.from, r.to) >= 0)
+            const added: Group[] = meta.add.map((g) => (inCopy(g) ? { ranges: g.ranges, color: c, hidden: false, spread: true } : { ranges: g.ranges, color: c, hidden: false }))
             groups = [...groups]
             groups.splice(index, 1, ...added)
             placed = true
             linked = true
           }
-          if (meta.nav) {
+          if (meta.nav !== undefined) {
             placed = true
             linked = true
+            navTo = meta.nav
           }
         }
 
         // 选区变了 → 重算下标;到最后一组 / 只剩一组 → 清表。
         if (tr.selectionSet && (groups.length || mirror)) {
           const { from, to } = tr.selection
-          // 见文件头 ⑦:光标只是被挪动(鼠标、方向键,文档没变)而且离开了原来那一处 → 停止联动。
-          if (!placed && !tr.docChanged) {
+          // 见文件头 ⑦:选区不是插件放的(鼠标、方向键、退格、删选区…),离开了原来那一组的那一份 → 停止联动。
+          // 换到别的组也算离开:联动只跟着插件自己放进光标的那一组。撤销展开(restore)整份换回旧状态,不在此列。
+          if (!placed && !restored) {
             const old = oldState.selection
-            const stayed = (ranges: Range[]): boolean => {
-              const a = rangeIndexOf(ranges, old.from, old.to)
-              return a >= 0 && a === rangeIndexOf(ranges, from, to)
-            }
-            const prevGroup = prev.groups[prev.index]
-            if (linked && !(prevGroup && stayed(prevGroup.ranges))) linked = false
-            if (mirror && !stayed(mirror)) mirror = null
+            const now = { from, to }
+            if (linked && !(curKept && groups[currentIndex(groups, from, to)] === curKept && sameCopy(prev.groups[cur]?.ranges, curKept.ranges, old, now))) linked = false
+            if (mirror && !sameCopy(prev.mirror ?? undefined, mirror, old, now)) mirror = null
           }
           if (groups.length) {
-            index = currentIndex(groups, from, to)
+            index = navTo !== undefined && navTo < groups.length && groupContains(groups[navTo], from, to) ? navTo : currentIndex(groups, from, to)
             if (groups.length <= 1 || index >= groups.length - 1) {
               const last = groups[index]
               // 见文件头 ⑧:只有 Tab / 展开落到的多处组才留镜像余组。
@@ -260,6 +318,8 @@ export function createTabstops(pm: PmToolkit): TabstopApi {
           if (mirror && !groupContains({ ranges: mirror }, from, to)) mirror = null
         }
 
+        // 没有镜像余组可补了,还没补的格就只留在原来那一份。
+        if (!mirror && groups.some((g) => g.spread)) groups = groups.map((g) => (g.spread ? { ranges: g.ranges, color: g.color, hidden: g.hidden } : g))
         const next: TabstopSnapshot = { groups, index, color, mirror, linked }
         if (!tr.docChanged && groups === prev.groups && index === prev.index && color === prev.color && mirror === prev.mirror && linked === prev.linked) return prev
         return { ...next, decos: build(tr.doc, next) }
@@ -323,7 +383,7 @@ export function createTabstops(pm: PmToolkit): TabstopApi {
         // 目标组已经包住当前选区 → 光标放到它末端(上游 toEditorSelection(true))。
         const [from, to] = groupContains(g, cur.from, cur.to) ? [r.to, r.to] : [r.from, r.to]
         if (from === cur.from && to === cur.to) continue
-        view.dispatch(view.state.tr.setSelection(pm.TextSelection.create(view.state.doc, from, to)).setMeta(key, { nav: true }).scrollIntoView())
+        view.dispatch(view.state.tr.setSelection(pm.TextSelection.create(view.state.doc, from, to)).setMeta(key, { nav: i }).scrollIntoView())
         return true
       }
       return false
