@@ -88,11 +88,13 @@ describe('旧版缺省片段库升级到新缺省', () => {
       expect(restoreLegacyDefaultSnippets(t)).toBe(t)
     }
   })
-  it('新缺省里 dm 两条要求独立成词', () => {
+  it('新缺省里 dm 三条要求前面是行首或空白', () => {
     const t = DEFAULT_SETTINGS.snippetsSourceText
     expect(t).toContain('/(\\S\\s+)dm/')
     expect(t).not.toContain('/(\\S\\s*)dm/')
     expect(t).toContain('(?<text>(?:.*\\s)?)dm/')
+    expect(t).toContain('/(?<!\\S)dm/')
+    expect(t).not.toContain('{trigger: "dm"')
     for (const name of released) expect(read(name)).toContain('/(\\S\\s*)dm/')
   })
 })

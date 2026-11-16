@@ -68,7 +68,7 @@ JavaScript 字符串中的 LaTeX 反斜杠要写成 `\\`。替换文本中的 `$
 | `U` 撤销标志 | 可以保留。撤销由 Forsion 编辑器处理。要立即恢复自动展开前键入的完整触发串，用 **Backspace** 或恢复触发串命令。 |
 | 函数返回 LuaSnip 风格的节点 | 将返回值改为含占位点的字符串，或用 `false` 跳过匹配。 |
 | Vim 快捷键、多光标占位 | 使用 Forsion 的快捷键。同编号占位点通过一个光标同步文本。 |
-| 默认片段里的两条 `dm`（`(\S\s*)dm` 与列表里的那条） | 改为只在 `dm` 前面是行首或空白时触发，正文里的 admin、列表项里的 roadmap 不会变成公式块。单独那条 `dm` 不变，紧跟在标点后的 dm（如 report.dmg）仍由它展开。从 Obsidian 复制来的片段库保留上游原样，想要同样的效果可照 [更新日志](../CHANGELOG.md) 手动改这两条。 |
+| 默认片段里的三条 `dm`（单独的 `dm`、`(\S\s*)dm` 与列表里的那条） | 改为只在 `dm` 前面是行首或空白时触发，正文里的 admin、文件名 installer.dmg、列表项里的 roadmap 不会变成公式块。从 Obsidian 复制来的片段库保留上游原样，想要同样的效果可照 [更新日志](../CHANGELOG.md) 手动改这三条。 |
 | 跨段公式、按 LaTeX 构造还原源码 | 多行块级公式需要留在同一文本块内。启用隐藏 LaTeX 语法后，光标进入公式时整条公式还原为源码。 |
 
 上游语法以 [Obsidian LaTeX Suite 1.12.8 文档](https://github.com/artisticat1/obsidian-latex-suite/blob/8498f43/DOCS.md)为参照。

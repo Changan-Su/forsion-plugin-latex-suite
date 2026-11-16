@@ -11,7 +11,7 @@ type Pair = readonly [zh: string, en: string]
 const STRINGS = {
   'tab.guide': ['教程与练习', 'Guide & practice'],
   'snippets.prose.label': ['正文自动片段', 'Automatic text snippets'],
-  'snippets.prose.desc': ['默认开启，与 Obsidian 的 Latex Suite 一致：正文里输入 mk、dm 等正文片段会自动展开。和 Obsidian 不同，词中间的 dm 不会展开，admin、roadmap 这类单词不会变成公式。数学片段始终只在成对公式内工作；代码区不展开。', 'On by default, as in Latex Suite for Obsidian: text snippets such as mk and dm expand automatically in prose. Unlike Obsidian, dm inside a word does not expand, so words such as admin or roadmap stay as text. Math snippets still require paired delimiters; code is excluded.'],
+  'snippets.prose.desc': ['默认开启，与 Obsidian 的 Latex Suite 一致：正文里输入 mk、dm 等正文片段会自动展开。和 Obsidian 不同，dm 前面须是行首或空格，admin、roadmap、installer.dmg 这类单词和文件名不会变成公式。数学片段始终只在成对公式内工作；代码区不展开。', 'On by default, as in Latex Suite for Obsidian: text snippets such as mk and dm expand automatically in prose. Unlike Obsidian, dm needs the start of a line or a space before it, so words and file names such as admin, roadmap or installer.dmg stay as text. Math snippets still require paired delimiters; code is excluded.'],
   'adv.compatibility': ['兼容说明：U 标志保留导入，撤销分组遵循 Forsion。刚展开时可按 Backspace 还原完整触发串。T/C 模式、includedMacros 和 triggerKey 暂不支持，会报告错误；c 模式也不会在代码区运行。', 'Compatibility: U is accepted on import; Undo grouping follows Forsion. Immediately press Backspace to restore the complete trigger. T/C modes, includedMacros and triggerKey are unsupported and report errors; c-mode snippets never run in code.'],
   // ── 标签页
   'tab.snippets': ['片段', 'Snippets'],

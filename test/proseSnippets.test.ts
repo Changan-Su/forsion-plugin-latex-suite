@@ -201,13 +201,22 @@ describe('dm 只在独立成词时展开(与 Obsidian 不同,有意为之)', () 
     r.type(typed)
     expect(r.text()).toBe(want)
   })
-  it('残留:以 dm 开头的词、紧跟标点的 dm 在打到 m 时仍会展开(dmesg、report.dmg;单独那条 dm 不变)', () => {
+  it.each([
+    ['paragraph', 'Forsion', '.dmg'], ['paragraph', 'installer', '.dmg'], ['paragraph', 'see report', '.dmg'],
+    ['paragraph', 'a non', '-dm'], ['paragraph', 'path', '/dm'], ['paragraph', 'call', '(dm'], ['paragraph', 'x', ':dm'],
+    ['blist', 'see report', '.dmg'], ['blist', 'a non', '-dm'], ['blist', 'path', '/dm'],
+  ] as [Block, string, string][])('紧跟在标点后的 dm 不展开(文件名、连字符、路径):%s %j + %j', (block, seed, typed) => {
+    const r = rig(block, [seed])
+    r.type(typed)
+    expect(r.text()).toBe(seed + typed)
+  })
+  it('残留:以 dm 开头的词在打到 m 时仍会展开(dmesg、dmg)', () => {
     const r = rig('paragraph', ['Para text'])
     r.type(' dmesg')
     expect(r.text()).toBe('Para text $$\nesg\n$$')
-    const d = rig('paragraph', ['see report'])
-    d.type('.dmg')
-    expect(d.text()).toBe('see report.$$\ng\n$$')
+    const g = rig('paragraph', ['open'])
+    g.type(' dmg')
+    expect(g.text()).toBe('open $$\ng\n$$')
   })
 })
 
