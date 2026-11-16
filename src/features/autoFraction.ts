@@ -8,6 +8,8 @@
 // 光标;返回 true 让调用方吞掉这次输入,`/` 不会再落到文档里。
 
 import type { EditorView } from 'prosemirror-view'
+import type { Transaction } from 'prosemirror-state'
+import type { DocGroup } from '../editor/tabstops'
 import { replaceInBlock, protectedRange } from '../editor/text'
 import type { MathCursor } from './shared'
 import { hasInlineAtom, mathCursorAt, matchBracketBackward, matchBracketForward, openBracketOf } from './shared'
@@ -42,6 +44,10 @@ export interface AutoFractionOptions {
   excludedEnvs?: string[]
   /** 会截断「项」的字符(上游 `autofractionBreakingChars`)。 */
   breakingChars?: string
+  /** 给展开结果挂占位点(接线层传 tabstops.push)。上游的自动分式本身就是一个片段:
+   *  分子为空时 `\frac{$0}{$1}$2`,否则 `\frac{分子}{$1}$2` —— 在外层片段的格子里打 `/`,
+   *  它替换掉当前格,Tab 先到分母、再到分式后面,最后才回外层。 */
+  tabstops?: (tr: Transaction, groups: DocGroup[]) => Transaction
 }
 
 /** `symbol` = 分数命令本身,上游 `autofractionSymbol`,默认 `\frac`(也可以是 `\dfrac`/`\tfrac`)。 */
@@ -102,7 +108,17 @@ export function autoFraction(view: EditorView, symbol: string, opts: AutoFractio
     ? start + symbol.length + 1
     : start + symbol.length + numerator.length + 3
 
-  view.dispatch(replaceInBlock(view.state, m.bt, start, to, insert, caret).scrollIntoView())
+  let tr = replaceInBlock(view.state, m.bt, start, to, insert, caret)
+  if (opts.tabstops) {
+    const base = m.bt.base + start
+    const denominator = base + symbol.length + numerator.length + 3
+    const end = base + insert.length
+    const groups: DocGroup[] = []
+    if (numerator.length === 0) groups.push({ index: 0, ranges: [{ from: base + symbol.length + 1, to: base + symbol.length + 1 }] })
+    groups.push({ index: 1, ranges: [{ from: denominator, to: denominator }] }, { index: 2, ranges: [{ from: end, to: end }] })
+    tr = opts.tabstops(tr, groups)
+  }
+  view.dispatch(tr.scrollIntoView())
   return true
 }
 

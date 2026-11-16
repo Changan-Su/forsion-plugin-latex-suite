@@ -18,34 +18,63 @@ import { setTextSelectionCtor } from './editor/text'
 import { createTabstops } from './editor/tabstops'
 import { createEngine } from './editor/expand'
 import { bracketPlugins } from './editor/brackets'
+import { dollarPlugins } from './editor/dollars'
 import { mathPreviewPlugins } from './editor/mathPreview'
 import { concealPlugins, CONCEAL_CSS } from './conceal/conceal'
-import { autoEnlargeBrackets, autoFraction, matrixShortcut, exitMatrix, tabout, taboutByCloseBracket, EDITOR_COMMANDS } from './features'
+import { autoEnlargeBrackets, EDITOR_COMMANDS } from './features'
+import { createKeyHandlers } from './keys'
 import { mountSettings, SETTINGS_CSS } from './settingsUi'
 import { splitList } from './settingsUi/model'
 
-/** `autofractionExcludedEnvs` 存的是一段 JSON(`[["^{","}"], …]`)—— 上游格式。
- *  解析失败一律给空表:一个写坏的设置不该让自动分式整个不能用。 */
-function parseExcludedEnvs(raw: string): string[] {
-  try {
-    const v = JSON.parse(raw) as unknown
-    if (!Array.isArray(v)) return []
-    // 兼容两种写法:["^{", "\\pu{"] 与 [["^{","}"], …](只取左定界符)
-    return v.map((x) => (Array.isArray(x) ? String(x[0] ?? '') : String(x ?? ''))).filter(Boolean)
-  } catch {
-    return []
-  }
-}
-
 const STYLE_ID = 'latex-suite-styles'
 
+// 占位标记、括号、`$` 的颜色与几何逐值照上游 styles.css(latex-suite-snippet-placeholder-N /
+// cm-snippetFieldPosition / latex-suite-color-bracket-N / latex-suite-*-dollar*)。
+// 明暗跟宿主走:宿主在 <html>(以及独立画出来的面板 / 导出副本)上写 data-mode,变量挂在那一层,
+// 就近的那一层说了算 —— 不用 prefers-color-scheme,宿主主题和系统明暗无关。
+//
+// 括号与 `$` 的着色和宿主自己的公式源码着色落在**同一个 span** 上(ProseMirror 把同一段字上的
+// 行内装饰并成一个元素),谁赢只看选择器权重,和两份样式表谁先加载无关:
+// `.ProseMirror .latex-suite-math-token.<类>` 是 (0,3,0),宿主现行的 `.am-app .math-source-delimiter`
+// 是 (0,2,0),更新的宿主把 token 颜色包进 :where()(0 权重)。所以不需要 !important ——
+// 用了反而会压过宿主给选区 / 只读态留的口子。
 const BASE_CSS = `
-.latex-suite-tabstop {
-  background: color-mix(in srgb, var(--accent-ink) 18%, transparent);
-  border-radius: 2px;
+:root, [data-mode="light"] {
+  --ls-ph-0-bg: #87cefa2e; --ls-ph-0-outline: #87cefa6e;
+  --ls-ph-1-bg: #ffa50033; --ls-ph-1-outline: #ffa5006b;
+  --ls-ph-2-bg: #00ff0022; --ls-ph-2-outline: #00ff0060;
+  --ls-br-0: #527aff; --ls-br-1: #ff50b7; --ls-br-2: #69ba00;
+  --ls-br-cursor: rgba(66, 12, 192, 0.3);
 }
-.latex-suite-tabstop-active {
-  background: color-mix(in srgb, var(--accent-ink) 34%, transparent);
+[data-mode="dark"] {
+  --ls-ph-0-outline: #87cefa43;
+  --ls-ph-1-outline: #ffa5004d;
+  --ls-ph-2-outline: #00ff003d;
+  --ls-br-0: #47b8ff; --ls-br-1: #ff55cd; --ls-br-2: #73ff63;
+  --ls-br-cursor: rgba(152, 111, 246, 0.6);
+}
+.ProseMirror .latex-suite-math-token.latex-suite-color-bracket-0 { color: var(--ls-br-0); }
+.ProseMirror .latex-suite-math-token.latex-suite-color-bracket-1 { color: var(--ls-br-1); }
+.ProseMirror .latex-suite-math-token.latex-suite-color-bracket-2 { color: var(--ls-br-2); }
+.ProseMirror .latex-suite-math-token.latex-suite-mismatched-bracket { color: rgba(255, 18, 18, 0.8); }
+.ProseMirror .latex-suite-math-token.latex-suite-highlighted-bracket { background-color: var(--ls-br-cursor); }
+.ProseMirror .latex-suite-math-token.latex-suite-highlighted-dollar-inline { color: #61ae08; }
+.ProseMirror .latex-suite-math-token.latex-suite-error-dollar { color: red; }
+.latex-suite-snippet-placeholder {
+  border-radius: 2px;
+  background-color: var(--ls-ph-bg);
+  outline: var(--ls-ph-outline) solid 1px;
+}
+.latex-suite-snippet-placeholder-0 { --ls-ph-bg: var(--ls-ph-0-bg); --ls-ph-outline: var(--ls-ph-0-outline); }
+.latex-suite-snippet-placeholder-1 { --ls-ph-bg: var(--ls-ph-1-bg); --ls-ph-outline: var(--ls-ph-1-outline); }
+.latex-suite-snippet-placeholder-2 { --ls-ph-bg: var(--ls-ph-2-bg); --ls-ph-outline: var(--ls-ph-2-outline); }
+.latex-suite-snippet-field {
+  vertical-align: text-top;
+  width: 0;
+  height: 1.15em;
+  display: inline-block;
+  margin: 0 -0.7px -.7em;
+  border-left: 1.4px dotted #888;
 }
 `
 
@@ -113,92 +142,26 @@ export function setup(ctx: PluginContext): () => void {
         (view) => enlarge(view),
       )
 
-      // 设置 → 各特性入参的**唯一**换算点。散着写就会出现「同一次 Tab 用了两套右定界符名单」
-      // 这类对不上的账(自审实测到过)。
-      const s0 = () => store.settings()
-      const taboutOpts = (s: ReturnType<typeof s0>) => ({
-        closingSymbols: splitList(s.taboutClosingSymbols),
-        exitOnlyOnEOL: s.taboutExitEquationOnlyOnEOL,
-      })
-      const matrixOpts = (s: ReturnType<typeof s0>) => ({
-        macros: splitList(s.matrixShortcutsMacroNames),
-        // 与 tabout 同一份名单:矩阵快捷键内部会先「跳出括号」,那一步用的就是右定界符表。
-        closingSymbols: splitList(s.taboutClosingSymbols),
-      })
       const enlarge = (view: EditorView): void => {
-        const s = s0()
+        const s = store.settings()
         autoEnlargeBrackets(view, {
           triggers: splitList(s.autoEnlargeBracketsTriggers),
           space: s.autoEnlargeBracketsSpace,
         })
       }
-
+      const handlers = createKeyHandlers({
+        settings: () => store.settings(),
+        ready: () => store.ready(),
+        paused: () => autoPaused,
+        engine,
+        tabstops,
+        enlarge,
+      })
       const keys = new pm.Plugin({
         key: new pm.PluginKey('LATEX_SUITE_KEYS'),
         props: {
-          handleTextInput: (view: EditorView, _from: number, _to: number, text: string): boolean => {
-            if (view.composing || !view.editable || !store.ready()) return false
-            const s = store.settings()
-            if (!autoPaused && s.snippetsEnabled && engine.onTextInput(view, _from, _to, text)) return true
-            // 自动分式的触发键固定是 `/`;设置里的 autofractionSymbol 是**替换出来的命令**
-            // (`\frac` / `\dfrac` / `\tfrac`),不是触发键 —— 上游同款,别把两者搞混。
-            if (!autoPaused && s.autofractionEnabled && text === '/') {
-              const literal = view.state.applyTransaction(view.state.tr.insertText(text, _from, _to)).state
-              if (!autoFraction(view, s.autofractionSymbol, {
-                enabled: true,
-                excludedEnvs: parseExcludedEnvs(s.autofractionExcludedEnvs),
-                breakingChars: s.autofractionBreakingChars,
-              })) return false
-              // 上游在自动分式展开成功后**也会再放大一次**:`(\sum x)/` 的分子里有 \sum,
-              // 包着它的括号该跟着长高。features 层刻意不在 autoFraction 内部串这一步
-              // (那会绕过 autoEnlargeBrackets 这个设置开关),由接线层接。
-              if (s.autoEnlargeBrackets) enlarge(view)
-              engine.rememberExpansion(view, literal)
-              return true
-            }
-            // 括号「打穿」:光标右边已经有一个 `)`,再打一次不该多出一个,而是跳过去。
-            // ⚠️必须排在自动分式**之后**:`/` 不是右括号,两者互不相干;但排在片段之后是必要的,
-            // 用户的片段完全可能以 `)` 收尾。
-            if (!autoPaused && s.taboutEnabled && taboutByCloseBracket(view, text, taboutOpts(s))) return true
-            return false
-          },
-          handleKeyDown: (view: EditorView, event: KeyboardEvent): boolean => {
-            if (view.composing || !view.editable || !store.ready()) return false
-            const s = store.settings()
-            if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return false
-            if (event.key === 'Backspace' && !event.shiftKey && engine.undoExpansion(view)) return true
-            if (event.key === 'Escape' && tabstops.hasActive(view.state)) {
-              view.dispatch(view.state.tr.setMeta(tabstops.key, { clear: true }))
-              return true
-            }
-            if (event.key === 'Tab' && !event.shiftKey) {
-              // **顺序即优先级,与上游 latex_suite.ts 的 keybindings 装配次序逐条对齐,别调换**:
-              //   手动片段展开 → 占位点跳位 → 矩阵分列 → 跳出括号 → 放行。
-              // 两处曾经想当然写反过:
-              //   ① 展开必须在跳位**前面** —— 人在占位点里打完一个手动触发串再按 Tab,要的是展开,
-              //      不是跳走(上游把 snippet_triggers 推在 nextTabstop 之前,就是这个道理)。
-              //   ② 矩阵必须在 tabout **前面** —— `}` 在 tabout 的右定界符名单里,不然
-              //      `\begin{…}` 环境里的每一次 Tab 都被 tabout 劫走,矩阵永远加不了单元格。
-              // 四条全不接就 return false,把 Tab 原样还给宿主(列表缩进等内置行为)。
-              if (s.snippetsEnabled && s.snippetsTrigger === 'Tab' && engine.expandManual(view)) return true
-              if (tabstops.cycle(view, 1)) return true
-              if (s.matrixShortcutsEnabled && matrixShortcut(view, 'Tab', splitList(s.matrixShortcutsEnvNames), matrixOpts(s))) return true
-              if (s.taboutEnabled && tabout(view, taboutOpts(s))) return true
-              return false
-            }
-            if (event.key === 'Tab' && event.shiftKey) {
-              return tabstops.cycle(view, -1)
-            }
-            if (event.key === 'Enter' && event.shiftKey) return s.matrixShortcutsEnabled && exitMatrix(view, splitList(s.matrixShortcutsEnvNames))
-            if (event.key === 'Enter') {
-              if (s.matrixShortcutsEnabled && matrixShortcut(view, 'Enter', splitList(s.matrixShortcutsEnvNames), matrixOpts(s))) return true
-              return false
-            }
-            if (event.key === ' ' && s.snippetsEnabled && s.snippetsTrigger === 'Space') {
-              return engine.expandManual(view)
-            }
-            return false
-          },
+          handleTextInput: (view: EditorView, from: number, to: number, text: string): boolean => handlers.handleTextInput(view, from, to, text),
+          handleKeyDown: (view: EditorView, event: KeyboardEvent): boolean => handlers.handleKeyDown(view, event),
         },
       })
 
@@ -237,6 +200,9 @@ export function setup(ctx: PluginContext): () => void {
     ...bracketPlugins(pm, {
       highlight: () => store.ready() && store.settings().highlightBracketsEnabled,
       colorize: () => store.ready() && store.settings().colorPairedBracketsEnabled,
+    }),
+    ...dollarPlugins(pm, {
+      enabled: () => store.ready() && store.settings().highlightDollarEnabled,
     }),
     ...mathPreviewPlugins(pm, {
       enabled: () => store.ready() && store.settings().mathPreviewEnabled,

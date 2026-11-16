@@ -627,6 +627,7 @@ function render(host: HTMLElement, api: SettingsUiApi, opts: RenderOpts): () => 
   addRow(displayPane, { label: 'disp.preview.label', desc: 'disp.preview.desc', control: toggle('mathPreviewEnabled') })
   addRow(displayPane, { label: 'disp.highlight.label', desc: 'disp.highlight.desc', control: toggle('highlightBracketsEnabled') })
   addRow(displayPane, { label: 'disp.color.label', desc: 'disp.color.desc', control: toggle('colorPairedBracketsEnabled') })
+  addRow(displayPane, { label: 'disp.dollar.label', desc: 'disp.dollar.desc', control: toggle('highlightDollarEnabled') })
 
   // ── 高级页
   const advancedPane = addTab('tab.advanced')

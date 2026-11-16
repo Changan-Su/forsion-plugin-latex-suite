@@ -11,7 +11,7 @@ type Pair = readonly [zh: string, en: string]
 const STRINGS = {
   'tab.guide': ['教程与练习', 'Guide & practice'],
   'snippets.prose.label': ['正文自动片段', 'Automatic text snippets'],
-  'snippets.prose.desc': ['默认关闭。启用后 mk、dm 等正文片段会自动展开。数学片段始终只在成对公式内工作；代码区不展开。', 'Off by default. Enable to expand text snippets such as mk and dm automatically. Math snippets still require paired delimiters; code is excluded.'],
+  'snippets.prose.desc': ['默认开启，与 Obsidian 的 Latex Suite 一致：正文里输入 mk、dm 等正文片段会自动展开。和 Obsidian 不同，dm 前面须是行首或空格，admin、roadmap、installer.dmg 这类单词和文件名不会变成公式。数学片段始终只在成对公式内工作；代码区不展开。', 'On by default, as in Latex Suite for Obsidian: text snippets such as mk and dm expand automatically in prose. Unlike Obsidian, dm needs the start of a line or a space before it, so words and file names such as admin, roadmap or installer.dmg stay as text. Math snippets still require paired delimiters; code is excluded.'],
   'adv.compatibility': ['兼容说明：U 标志保留导入，撤销分组遵循 Forsion。刚展开时可按 Backspace 还原完整触发串。T/C 模式、includedMacros 和 triggerKey 暂不支持，会报告错误；c 模式也不会在代码区运行。', 'Compatibility: U is accepted on import; Undo grouping follows Forsion. Immediately press Backspace to restore the complete trigger. T/C modes, includedMacros and triggerKey are unsupported and report errors; c-mode snippets never run in code.'],
   // ── 标签页
   'tab.snippets': ['片段', 'Snippets'],
@@ -146,11 +146,19 @@ const STRINGS = {
   ],
   'disp.highlight.label': ['高亮配对括号', 'Highlight matching bracket'],
   'disp.highlight.desc': [
-    '光标贴着一个括号时,把和它配对的那一个也标出来。',
-    'When the cursor sits next to a bracket, highlight its partner.',
+    '给包住光标的最内层那一对括号加底色;光标贴在括号外侧也算在里面。',
+    'Shade the innermost pair of brackets around the cursor, including when the cursor sits just outside one.',
   ],
   'disp.color.label': ['括号按层级着色', 'Color paired brackets'],
-  'disp.color.desc': ['嵌套的括号按深度给不同颜色,一眼看出层级。', 'Nested brackets get different colors per depth.'],
+  'disp.color.desc': [
+    '嵌套的括号按深度轮换三种颜色,配不上的括号标红。',
+    'Nested brackets cycle through three colors by depth; unmatched brackets turn red.',
+  ],
+  'disp.dollar.label': ['公式定界符着色', 'Highlight math delimiters'],
+  'disp.dollar.desc': [
+    '配上的 $ 与 $$ 标绿,没写完的 $$ 和块级公式里多出来的 $ 标红。',
+    'Matched $ and $$ turn green; an unclosed $$ or a stray $ inside display math turns red.',
+  ],
 
   // ── 高级
   'adv.variables.label': ['片段变量', 'Snippet variables'],

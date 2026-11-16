@@ -61,6 +61,8 @@ export interface LatexSuiteSettings {
   highlightBracketsEnabled: boolean
   /** 配对括号按层级着色。 */
   colorPairedBracketsEnabled: boolean
+  /** 公式定界符 `$` / `$$` 着色:配上的标绿,没配上的标红(上游同名设置)。 */
+  highlightDollarEnabled: boolean
 
   // ── 高级
   wordDelimiters: string
@@ -132,7 +134,8 @@ export function serializeRawSnippets(snippets: RawSnippet[]): string {
 
 export const DEFAULT_SETTINGS: LatexSuiteSettings = {
   snippetsEnabled: true,
-  proseSnippetsEnabled: false,
+  // 与 Obsidian 的 Latex Suite 一致:正文里 mk / dm 直接展开。存过 false 的用户照旧(mergeSettings 只补缺的键)。
+  proseSnippetsEnabled: true,
   snippetsTrigger: 'Tab',
   snippetsSource: 'user',
   snippetsFile: '',
@@ -165,6 +168,7 @@ export const DEFAULT_SETTINGS: LatexSuiteSettings = {
   mathPreviewEnabled: false,
   highlightBracketsEnabled: true,
   colorPairedBracketsEnabled: true,
+  highlightDollarEnabled: true,
 
   // `\n` 是**两个字符**的字面量,不是换行 —— onWordBoundary 会把它还原成换行符。别写成真换行。
   wordDelimiters: '., +-\\n\t:;!?\\/{}[]()=~$\'"|`<>*^%#@&',
@@ -203,18 +207,111 @@ export function mergeSettings(raw: unknown): LatexSuiteSettings {
   return out
 }
 
-/** 只修复逐字匹配的旧版默认文本；用户编辑过的片段库绝不猜测或覆盖。 */
-export function restoreLegacyDefaultSnippets(source: string): string {
-  const legacy = DEFAULT_SNIPPETS.map(({ excludedMacros: _excluded, ...snippet }) => snippet)
-  const oldSerialized = serializeRawSnippets(legacy)
-  const oldReset = `[\n${legacy.map((s) => {
-    const parts = [`trigger: ${jsValue(s.trigger)}`, `replacement: ${jsValue(s.replacement)}`]
-    if (s.options) parts.push(`options: ${JSON.stringify(s.options)}`)
-    if (s.priority) parts.push(`priority: ${s.priority}`)
-    if (s.description) parts.push(`description: ${JSON.stringify(s.description)}`)
-    return `  {${parts.join(', ')}}`
-  }).join(',\n')}\n]\n`
-  return source === oldSerialized || source === oldReset ? DEFAULT_SETTINGS.snippetsSourceText : source
+/** 53 位字符串指纹(cyrb53)。只用来认「是不是某个已发布版本的缺省库原文」,不做安全用途。 */
+export function textFingerprint(text: string): string {
+  let h1 = 0xdeadbeef
+  let h2 = 0x41c6ce57
+  for (let i = 0; i < text.length; i++) {
+    const ch = text.charCodeAt(i)
+    h1 = Math.imul(h1 ^ ch, 2654435761)
+    h2 = Math.imul(h2 ^ ch, 1597334677)
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909)
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909)
+  return `${text.length}:${(4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36)}`
+}
+
+/**
+ * 缺省片段库的修订号,存在设置外层的旁路键 DEFAULTS_REVISION_KEY 里(和 latexSuiteLastGood 一样不进
+ * DEFAULT_SETTINGS:mergeSettings 会把「没有」补成当前值,就认不出还没迁移过的老设置了)。
+ * 只在成功读盘之后的保存里写,写什么见 revisionToSave。
+ */
+export const DEFAULTS_REVISION = 1
+export const DEFAULTS_REVISION_KEY = 'latexSuiteDefaultsRevision'
+
+type FingerprintTables = Readonly<Record<number, Readonly<Record<string, string>>>>
+
+/**
+ * 修订号 r → 修订号还是 r 的那些版本发布时写进用户设置的缺省片段库(长度:指纹 → 版本)。
+ * 0 = 设置里没有修订号(1.0.0 – 1.1.2 写的)。原文取自各版**发布出去的 main.js 运行时**写进设置的文本
+ * (函数体是压缩后的),存在 test/fixtures/default-snippets,单测核对这里的指纹。
+ * 插件每次保存都写整份设置,没动过片段库的用户,设置里存的就是当时那一版的缺省原文;只改 defaults.ts
+ * 对他们不起作用,所以要在读盘时迁移一次。
+ * 修订号为 r 的设置对照第 r 张到第 DEFAULTS_REVISION − 1 张表(没有修订号 = 0,对照全部旧表):
+ * 1.1.0 – 1.1.2 不认识修订号,在那里存盘会把它丢掉,片段库却可能已经是更新的缺省原文,只对照第 r 张就
+ * 永远升不上去。(1.0.0 读盘是 {...缺省, ...读到的},存盘原样带着修订号,不会丢。)
+ * 代价(接受):回退到 1.0.0 点「恢复默认」再升级,片段库停在 1.0.0 的恢复缺省 —— 修订号还是 1,不再
+ * 对照第 0 张表。只是缺省没跟上,用户的东西没丢。
+ * ⚠️下次改 defaults.ts 并发布时,步骤见 test/fixtures/default-snippets/README.md:
+ * ① 用 scripts/dump-default-snippets.mjs 从**这一修订号最后发布的 main.js** 取原文和指纹(别用 vitest
+ * 里看到的 DEFAULT_SETTINGS.snippetsSourceText,两者不同,用错了测试照样全绿,老用户却永远升不上去),
+ * 原文存进 fixtures;② 指纹登记到 `[DEFAULTS_REVISION]` 这一项(新开一项,别并进旧的);③ 改
+ * test/settingsModel.test.ts 里钉指纹的那条(released 列表和按修订号的期望);④ DEFAULTS_REVISION 加 1。
+ * 没发布过的中间构建不登记。
+ */
+const RELEASED_DEFAULTS_BY_REVISION: FingerprintTables = {
+  0: {
+    '16070:dt9o15zarg': '1.0.0',
+    '16070:27f1a4kcj2g': '1.0.0 reset',
+    '16123:1tpdwu6y71w': '1.1.0 - 1.1.2',
+  },
+}
+
+/** 一版插件的缺省片段库历史:当前修订号、各修订号的已发布缺省指纹、当前缺省原文。 */
+export interface DefaultsHistory { revision: number; tables: FingerprintTables; current: string }
+const HISTORY: DefaultsHistory = {
+  revision: DEFAULTS_REVISION,
+  tables: RELEASED_DEFAULTS_BY_REVISION,
+  current: DEFAULT_SETTINGS.snippetsSourceText,
+}
+
+/** 读到的修订号是不是读得懂的值(非负整数)。 */
+const readableRevision = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 0
+
+/** 读到的设置里的修订号:没有 = 0;有但不是非负整数 = null(认不出,当作不知道,不迁移)。 */
+export function savedDefaultsRevision(saved: unknown): number | null {
+  if (!saved || typeof saved !== 'object') return 0
+  const value = (saved as Record<string, unknown>)[DEFAULTS_REVISION_KEY]
+  if (value === undefined) return 0
+  return readableRevision(value) ? value : null
+}
+
+/**
+ * 成功读盘之后保存时写回的修订号。没有就写当前修订号;读得懂的写 max(读到的, 当前),别把将来某版写下
+ * 的更大修订号降回来(否则那版里有意设成本版缺省原文的片段库,回退到本版随便存一次盘、再升级就被换掉);
+ * 读不懂的原样写回,不认识的东西不覆盖。
+ * 代价(接受):回退到本版以后点「恢复默认」,写下的是本版缺省、修订号却还是更大的那个,再升级时停在本版
+ * 缺省、不会自动换。这只是缺省没跟上,用户的东西没丢。
+ */
+export function revisionToSave(saved: unknown, current = DEFAULTS_REVISION): unknown {
+  const value = saved && typeof saved === 'object' ? (saved as Record<string, unknown>)[DEFAULTS_REVISION_KEY] : undefined
+  if (value === undefined) return current
+  return readableRevision(value) ? Math.max(value, current) : value
+}
+
+/**
+ * 迁移只发生一次:存的修订号已经是当前(或更新)的,或者认不出,原样返回;否则逐字等于第 revision 张到
+ * 第 history.revision − 1 张表里某份已发布缺省原文的,换成当前缺省。改过一个字的、以及升级以后自己改回
+ * 旧缺省原文并保存过的(那次保存带上了当前修订号),一律原样。
+ */
+export function migrateDefaultSnippetsWith(source: string, revision: number | null, history: DefaultsHistory): string {
+  if (typeof source !== 'string' || revision === null || revision >= history.revision) return source
+  if (source === history.current) return source
+  const fingerprint = textFingerprint(source)
+  for (let r = revision; r < history.revision; r++) {
+    if (history.tables[r]?.[fingerprint]) return history.current
+  }
+  return source
+}
+
+/** 按本版的缺省历史迁移(见 migrateDefaultSnippetsWith)。 */
+export function migrateDefaultSnippets(source: string, revision: number | null): string {
+  return migrateDefaultSnippetsWith(source, revision, HISTORY)
+}
+
+/** 登记过的所有指纹(给单测核对 fixtures 用)。 */
+export function releasedDefaultFingerprints(): Record<number, string[]> {
+  return Object.fromEntries(Object.entries(RELEASED_DEFAULTS_BY_REVISION).map(([rev, table]) => [rev, Object.keys(table)]))
 }
 
 /** `"sum, int, frac"` → `['sum', 'int', 'frac']`(上游 strToArray:先去掉**全部**空白再切)。 */

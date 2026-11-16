@@ -12,7 +12,8 @@ import type { EditorState, Transaction } from 'prosemirror-state'
 import type { Node as PmNode, ResolvedPos } from 'prosemirror-model'
 
 /** 行内非文本节点(图片、双链芯片…)的占位符。与宿主同款:占位**等长**,偏移才对得上。 */
-const ATOM = '￼'
+/** 行内原子节点(图片、芯片…)在文本视图里的占位符。 */
+export const ATOM = '￼'
 
 export interface BlockText {
   /** 当前 textblock 的纯文本(行内原子按 nodeSize 补等长占位符)。 */

@@ -1,7 +1,7 @@
 // Settings and snippets share one load/save path. Failed reads never replace a working library.
 import type { PluginContext } from '../types/forsion'
 import type { LatexSuiteSettings } from './settingsUi/model'
-import { DEFAULT_SETTINGS, mergeSettings, restoreLegacyDefaultSnippets } from './settingsUi/model'
+import { DEFAULT_SETTINGS, DEFAULTS_REVISION, DEFAULTS_REVISION_KEY, mergeSettings, migrateDefaultSnippets, revisionToSave, savedDefaultsRevision } from './settingsUi/model'
 import { DEFAULT_SNIPPET_VARIABLES } from './snippets/variables'
 import { parseSnippets } from './snippets/parse'
 import { sortSnippets, type Snippet } from './snippets/model'
@@ -53,6 +53,8 @@ export function createStore(ctx: PluginContext): Store {
   let saveIssue: Issue | null = null
   let pendingPatch: Partial<LatexSuiteSettings> = {}
   let lastGood: LastGoodLibrary | null = null
+  /** 保存时写的修订号;成功读盘时按读到的定下(见 revisionToSave),读盘成功之前不会写盘。 */
+  let savedRevision: unknown = DEFAULTS_REVISION
   let hasUserUpdates = false
   let saveQueue: Promise<void> = Promise.resolve()
   let folderPaths: string[] = []
@@ -99,7 +101,9 @@ export function createStore(ctx: PluginContext): Store {
   }
   const persist = (): void => {
     if (!loaded || disposed || !ctx.saveData) return
-    const snapshot = { ...settings, ...(lastGood ? { latexSuiteLastGood: { ...lastGood } } : {}) }
+    // 修订号只随成功读盘之后的保存写下:从此这份设置里的片段库算用户在这一版里定过的,不再迁移。
+    // 读到更大的或读不懂的,按读到的写回(见 revisionToSave)。
+    const snapshot = { ...settings, ...(lastGood ? { latexSuiteLastGood: { ...lastGood } } : {}), [DEFAULTS_REVISION_KEY]: savedRevision }
     // Serial saves prevent an older slow write from overwriting a newer setting.
     // Disposal stops new work, but writes already accepted from the UI still drain.
     saveQueue = saveQueue.then(async () => {
@@ -149,8 +153,16 @@ export function createStore(ctx: PluginContext): Store {
         if (saved != null && (typeof saved !== 'object' || Array.isArray(saved))) {
           throw new Error('Invalid saved settings')
         }
-        settings = mergeSettings({ ...(saved ?? {}), ...pendingPatch })
-        settings.snippetsSourceText = restoreLegacyDefaultSnippets(settings.snippetsSourceText)
+        // 只在读成功之后、只迁移读到的那份(加载完成前在设置页里的改动 pendingPatch 原样保留):
+        // 没有修订号的老设置里,逐字等于某个已发布版本缺省库的换成当前缺省。只改内存,下次保存时随整份
+        // 设置和修订号一起写回;写过修订号以后就不再迁移(用户自己改回旧缺省原文也算设过的值)。
+        const revision = savedDefaultsRevision(saved)
+        const fromDisk: Record<string, unknown> = { ...(saved ?? {}) }
+        if (typeof fromDisk.snippetsSourceText === 'string') {
+          fromDisk.snippetsSourceText = migrateDefaultSnippets(fromDisk.snippetsSourceText, revision)
+        }
+        settings = mergeSettings({ ...fromDisk, ...pendingPatch })
+        savedRevision = revisionToSave(saved)
         // Backups belong only to embedded user code. External files are always read fresh.
         const backup = saved?.latexSuiteLastGood as Partial<LastGoodLibrary> | undefined
         if (settings.snippetsSource === 'user' && !settings.loadSnippetVariablesFromFile && backup?.version === 1
@@ -159,10 +171,12 @@ export function createStore(ctx: PluginContext): Store {
             const variables = JSON.parse(backup.snippetVariablesSourceText) as unknown
             if (!variables || typeof variables !== 'object' || Array.isArray(variables)
               || Object.values(variables).some((value) => typeof value !== 'string')) throw new Error('Invalid backup variables')
-            const recovered = parseSnippets(backup.snippetsSourceText, { ...DEFAULT_SNIPPET_VARIABLES, ...variables as Record<string, string> })
+            // 备份和主库同一个闸:没有修订号、又逐字是某个已发布版本缺省库的,同样换成新缺省,别让旧缺省从备份里复活。
+            const backupText = migrateDefaultSnippets(backup.snippetsSourceText, revision)
+            const recovered = parseSnippets(backupText, { ...DEFAULT_SNIPPET_VARIABLES, ...variables as Record<string, string> })
             if (!recovered.errors.length) {
               active = recovered.snippets
-              lastGood = backup as LastGoodLibrary
+              lastGood = { ...backup as LastGoodLibrary, snippetsSourceText: backupText }
             }
           } catch { /* Ignore invalid backup metadata; never rewrite the user's draft. */ }
         }

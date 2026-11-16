@@ -9,7 +9,7 @@
   "description": "把敲 LaTeX 公式变得和手写一样快。**片段展开**:在公式里打 `@a` 立刻成 `\\alpha`、`//` 成分式、`sr` 成平方 —— 上千条打磨过的默认触发串开箱即用,也可以整份换成自己的。**占位跳转**:展开后按 Tab 在 `\\frac{}{}`、`\\begin{}\\end{}` 的空位之间跳,同名占位点自动联动(改一处环境名两头一起变)。**Tabout**:公式里按 Tab 直接跳出括号或跳出 `$`,不用去够方向键。**矩阵快捷**:在 matrix/cases/align 里 Tab 分列、回车换行。**实时符号**:光标不在那一段时 `\\alpha` 显示成 α、`\\frac{a}{b}` 显示成分式,光标一进就露出源码可编辑。**自动放大括号**:公式里出现 `\\sum` 之类的高结构时把括号换成 `\\left( \\right)`。设置界面自带一个真代码编辑器改片段库,片段也可以放在笔记库的文件/文件夹里由外部编辑器维护、存盘即热重载。全部离线,公式在磁盘上始终是标准 markdown 的 `$…$`,不改任何落盘格式。移植自 Obsidian 的 obsidian-latex-suite(MIT, artisticat1)。",
   "descriptionEn": "Make typesetting LaTeX math as fast as handwriting. **Snippets**: type `@a` inside math and get `\\alpha`, `//` for fractions, `sr` for squares — a thousand battle-tested triggers out of the box, or swap in your own. **Tabstops**: after expanding, Tab between the empty slots in `\\frac{}{}` and `\\begin{}\\end{}`; repeated slots stay mirrored (rename the environment once, both ends follow). **Tabout**: Tab jumps straight out of brackets or out of `$`. **Matrix shortcuts**: Tab for columns, Enter for rows inside matrix/cases/align. **Conceal**: `\\alpha` renders as α while the cursor is elsewhere and reveals the source the moment you move in. **Auto-enlarge brackets** around tall structures. The settings page ships a real code editor for your snippet library, and snippets can live in a vault file or folder that hot-reloads on save. Fully offline; on disk your math stays plain markdown `$…$` — no format changes. Ported from Obsidian's obsidian-latex-suite (MIT, artisticat1).",
   "onboarding": {
-    "intro": "在成对公式内快速输入 LaTeX。正文自动片段默认关闭，代码区不会展开。",
+    "intro": "在成对公式内快速输入 LaTeX。正文里单独输入 mk、dm 会自动插入公式，单词和文件名里的 dm 不会展开，代码区也不会。",
     "steps": [
       {
         "title": "插入公式",
@@ -34,7 +34,7 @@
     ],
     "settings": true,
     "en": {
-      "intro": "Type LaTeX inside paired delimiters. Automatic text snippets are off by default; code is excluded.",
+      "intro": "Type LaTeX inside paired delimiters. Typing mk or dm on its own in prose inserts math; dm inside words or file names and code are left alone.",
       "steps": [
         {
           "title": "Insert math",
