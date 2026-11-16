@@ -2,7 +2,7 @@
 
 [简体中文](../CHANGELOG.md)
 
-## Unreleased
+## 1.2.0 — 2026-11-16
 
 - Placeholder navigation now matches Latex Suite in Obsidian. After the inner snippet of a nested expansion, Tab moves to the next outer placeholder instead of selecting the whole outer content. If you move to a later placeholder with the mouse or arrow keys, Tab continues from there. Navigation ends at the last placeholder, which is no longer highlighted or extended by further typing.
 - After snippets with a single placeholder, such as `mk` and `dm`, the first Tab is no longer consumed by placeholder navigation. Shift+Tab on the first placeholder no longer ends navigation, and the placeholders remain.
