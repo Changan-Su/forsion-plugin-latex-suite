@@ -12,7 +12,7 @@
 - New math delimiter highlighting, on by default. Matched `$` and `$$` turn green; an unclosed `$$` or a stray `$` inside display math turns red. Turn it off under Display settings.
 - These colors have separate light and dark variants that follow Forsion's appearance, and Forsion's own math source colors no longer override them.
 - Automatic text snippets are now on by default, as in Latex Suite for Obsidian: typing `mk` or `dm` in prose inserts inline or block math. If an earlier version saved this setting as off, that choice is kept. To keep prose snippets from expanding, turn off Automatic text snippets under Snippets.
-- `dm` in prose now behaves as in Obsidian: words containing dm no longer turn into math in numbered headings (such as "## 1. Introduction") or quotes. In real list items it still expands, and links and bold text on the line are kept. Typing `dm` right before another word no longer expands.
+- `dm` in prose now behaves as in Obsidian: words containing dm no longer turn into math in numbered headings (such as "## 1. Introduction") or quotes. On the first line of a list item it still expands, and links and bold text on the line are kept; later paragraphs of the same item and tables inside it do not expand. Typing `dm` right before another word no longer expands.
 - Typing a snippet that captures the previous character, such as a Greek letter, inside a repeated placeholder no longer adds a stray `{` to the other copies.
 
 ## 1.1.2 — 2026-11-13

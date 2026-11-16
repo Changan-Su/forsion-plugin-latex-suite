@@ -3,7 +3,7 @@
 //   S2 词边界看光标后面真实的字符(在已有单词前面插入 dm 不展开,上游同样)。
 // 期望值来自真 Obsidian 1.15.1 + Latex Suite 1.12.8 缺省设置下的实测。
 import { describe, expect, it } from 'vitest'
-import { Schema, Slice, Fragment, type Mark } from 'prosemirror-model'
+import { Schema, Slice, Fragment, type Mark, type Node as PmNode } from 'prosemirror-model'
 import { EditorState, Plugin, PluginKey, TextSelection, Selection, NodeSelection } from 'prosemirror-state'
 import { Decoration, DecorationSet, type EditorView } from 'prosemirror-view'
 import { createEngine } from '../src/editor/expand'
@@ -24,6 +24,10 @@ const schema = new Schema({
     bullet_list: { group: 'block', content: 'list_item+' },
     ordered_list: { group: 'block', content: 'list_item+' },
     list_item: { content: 'paragraph block*' },
+    table: { group: 'block', content: 'table_row+' },
+    table_row: { content: 'table_cell+' },
+    table_cell: { content: 'paragraph' },
+    image: { inline: true, group: 'inline', atom: true },
     hard_break: { inline: true, group: 'inline' },
     text: { group: 'inline' },
   },
@@ -56,7 +60,18 @@ function rig(block: Block, parts: Part[]) {
   const doc = schema.node('doc', null, [top])
   let start = 0
   doc.descendants((n, p) => { if (n.isTextblock) start = p + 1; return true })
-  const caret = start + (caretAt >= 0 ? caretAt : offset)
+  return boot(doc, start + (caretAt >= 0 ? caretAt : offset))
+}
+
+/** 任意文档:光标放在文本里的 `§` 处(这个字符本身删掉)。 */
+function rigDoc(doc: PmNode) {
+  let at = -1
+  doc.descendants((n, p) => { if (at < 0 && n.isText && n.text!.includes('§')) at = p + n.text!.indexOf('§'); return at < 0 })
+  const clean = EditorState.create({ schema, doc }).tr.delete(at, at + 1).doc
+  return boot(clean, at)
+}
+
+function boot(doc: PmNode, caret: number) {
   const settings = mergeSettings(null)
   const tabs = createTabstops(pm)
   let state = EditorState.create({ schema, doc, plugins: [tabs.plugin], selection: TextSelection.create(doc, caret) })
@@ -78,7 +93,13 @@ function rig(block: Block, parts: Part[]) {
   }
   const marked = (name: string) => { let s = ''; view.state.doc.descendants((n) => { if (n.isText && n.marks.some((m) => m.type.name === name)) s += n.text; return true }); return s }
   const hrefs = () => { const out: string[] = []; view.state.doc.descendants((n) => { if (n.isText) for (const m of n.marks) if (m.type.name === 'link') out.push(m.attrs.href); return true }); return out }
-  return { type, text, marked, hrefs, settings }
+  /** 每个文本块一项;原子节点记成 <名字>,hard break 记成 ⏎。 */
+  const blocks = () => {
+    const out: string[] = []
+    view.state.doc.descendants((n) => { if (n.isTextblock) out.push(n.textBetween(0, n.content.size, '⏎', (l) => (l.type.name === 'hard_break' ? '⏎' : `<${l.type.name}>`))); return true })
+    return out
+  }
+  return { type, text, blocks, marked, hrefs, settings }
 }
 
 const link = schema.marks.link.create({ href: 'https://example.com/x' })
@@ -157,3 +178,35 @@ describe('含 dm 的常见单词(与真 Obsidian 逐条对过)', () => {
   })
 })
 
+
+// 下面两条的期望来自上游列表正则在 Obsidian 源码行上的实际结果(续段 `  second roadm`、
+// 表格行 `  | roadm |` 都不触发),以及上游词边界看的是落盘文本(图片 `![[…]]` 的 `!` 是分隔符)。
+const nd = (t: string, ...c: PmNode[]) => schema.node(t, null, c)
+const tx = (s: string) => schema.text(s)
+
+describe('F3 列表里的 dm 只认列表项的第一个段落', () => {
+  it('同一项的第二段里打 roadmap 不展开', () => {
+    const r = rigDoc(nd('doc', nd('bullet_list', nd('list_item', nd('paragraph', tx('first')), nd('paragraph', tx('second roa§'))))))
+    r.type('dmap')
+    expect(r.blocks()).toEqual(['first', 'second roadmap'])
+  })
+  it('列表项里的表格单元格里打 roadmap 不展开', () => {
+    const r = rigDoc(nd('doc', nd('bullet_list', nd('list_item', nd('paragraph', tx('first')),
+      nd('table', nd('table_row', nd('table_cell', nd('paragraph', tx('roa§'))), nd('table_cell', nd('paragraph', tx('x')))))))))
+    r.type('dmap')
+    expect(r.blocks()).toEqual(['first', 'roadmap', 'x'])
+  })
+  it('嵌套列表项的第一个段落照常展开', () => {
+    const r = rigDoc(nd('doc', nd('bullet_list', nd('list_item', nd('paragraph', tx('outer')), nd('bullet_list', nd('list_item', nd('paragraph', tx('inner roa§'))))))))
+    r.type('dm')
+    expect(r.blocks()).toEqual(['outer', 'inner roa⏎$$⏎⏎$$'])
+  })
+})
+
+describe('F4 紧贴行内原子节点(图片、芯片)打 dm 照常展开', () => {
+  it('图片前面打 dm', () => {
+    const r = rigDoc(nd('doc', nd('paragraph', tx('hello §'), schema.node('image'))))
+    r.type('dm')
+    expect(r.blocks()).toEqual(['hello $$⏎⏎$$<image>'])
+  })
+})

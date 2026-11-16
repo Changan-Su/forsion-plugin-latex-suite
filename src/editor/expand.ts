@@ -9,7 +9,7 @@ import type { PmToolkit } from '../../types/forsion'
 import type { Snippet } from '../snippets/model'
 import { matchSnippet, onWordBoundary, shouldRunInMode, trimReplacementWhitespace } from '../snippets/model'
 import { parseTabstops } from '../snippets/tabstopParse'
-import { blockTextAt, inlineTextNodes, mathBlockString, protectedRange, isCodeBlock, textSelectionAt } from './text'
+import { ATOM, blockTextAt, inlineTextNodes, mathBlockString, protectedRange, isCodeBlock, textSelectionAt } from './text'
 import { mathContext } from './mathMode'
 import { toDocGroups, type TabstopApi, type TabstopSnapshot } from './tabstops'
 
@@ -48,7 +48,8 @@ function anchoredAtLineStart(trigger: RegExp): boolean {
 /** Obsidian 里正则匹配的是整行 Markdown 源码,文本前面还有块级标记;宿主的文本块里没有这些标记。
  *  给锚在行首的正则补上它们,行首判断才和上游一致:
  *   - 标题 `## `、引用 `> `:`## 1. Roadm` 不会被当成列表行;
- *   - 列表项 `- `(嵌套的外层补缩进):列表里的片段照常认得出列表;
+ *   - 列表项 `- `(嵌套的外层补缩进):列表里的片段照常认得出列表。只有列表项的**第一个段落**是
+ *     带标记的那一行;同一项的续段、项里的表格单元格在源码里只是缩进行,上游的列表片段不认;
  *   - 普通段落开头像列表标记的(`1. `、`- `):落盘时会被转义成 `1\. `,上游看到的也是转义后的,
  *     这里补一个 `\` 让它同样认不出。 */
 function sourceLinePrefix(state: EditorState, text: string): { prefix: string; inList: boolean } {
@@ -65,7 +66,10 @@ function sourceLinePrefix(state: EditorState, text: string): { prefix: string; i
     const level = Number(block.attrs.level) || 1
     return { prefix: quotes + '#'.repeat(level) + ' ', inList: false }
   }
-  if (lists) return { prefix: quotes + '  '.repeat(lists - 1) + '- ', inList: true }
+  // ⚠️曾经只要祖先里有列表项就补「- 」:续段和项里表格单元格里打 roadmap 也展开成列表块公式。
+  const item = $from.depth >= 2 ? $from.node($from.depth - 1) : null
+  const firstInItem = !!item && /^(list_?item|task_?item)$/i.test(item.type.name) && $from.index($from.depth - 1) === 0
+  if (lists && firstInItem) return { prefix: quotes + '  '.repeat(lists - 1) + '- ', inList: true }
   if (/^[ \t]*(\d+[.)]|[-*+])[ \t]/.test(text)) return { prefix: quotes + '\\', inList: false }
   return { prefix: quotes, inList: false }
 }
@@ -155,7 +159,8 @@ function findExpansion(
 
     // 词边界看光标**后面**真实的那个字符(上游 isOnWordBoundary 取 sliceDoc(to, to + 1))。
     // ⚠️曾经把行尾当光标:后一个字符恒为空格,`hello |world` 里打 dm 也会展开。
-    if (snippet.options.onWordBoundary && !onWordBoundary(line + after, triggerPos, line.length + (hit.afterLength ?? 0), settings.wordDelimiters)) {
+    // 行内原子节点(图片、芯片)也算分隔符:它们落盘是 `![[…]]`、`[[…]]` 这类,上游看到的头尾都是分隔符。
+    if (snippet.options.onWordBoundary && !onWordBoundary(line + after, triggerPos, line.length + (hit.afterLength ?? 0), settings.wordDelimiters + ATOM)) {
       continue
     }
 
