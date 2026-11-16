@@ -201,10 +201,13 @@ describe('dm 只在独立成词时展开(与 Obsidian 不同,有意为之)', () 
     r.type(typed)
     expect(r.text()).toBe(want)
   })
-  it('残留:以 dm 开头的词在打到 m 时仍会展开(dmesg)', () => {
+  it('残留:以 dm 开头的词、紧跟标点的 dm 在打到 m 时仍会展开(dmesg、report.dmg;单独那条 dm 不变)', () => {
     const r = rig('paragraph', ['Para text'])
     r.type(' dmesg')
     expect(r.text()).toBe('Para text $$\nesg\n$$')
+    const d = rig('paragraph', ['see report'])
+    d.type('.dmg')
+    expect(d.text()).toBe('see report.$$\ng\n$$')
   })
 })
 
