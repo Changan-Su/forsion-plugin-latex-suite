@@ -233,15 +233,21 @@ type FingerprintTables = Readonly<Record<number, Readonly<Record<string, string>
 
 /**
  * 修订号 r → 修订号还是 r 的那些版本发布时写进用户设置的缺省片段库(长度:指纹 → 版本)。
- * 0 = 设置里没有修订号(1.0.0 – 1.1.2 写的)。原文取自各版 main.js 运行时序列化出来的文本(函数体是
- * 压缩后的),存在 test/fixtures/default-snippets,单测核对这里的指纹。
+ * 0 = 设置里没有修订号(1.0.0 – 1.1.2 写的)。原文取自各版**发布出去的 main.js 运行时**写进设置的文本
+ * (函数体是压缩后的),存在 test/fixtures/default-snippets,单测核对这里的指纹。
  * 插件每次保存都写整份设置,没动过片段库的用户,设置里存的就是当时那一版的缺省原文;只改 defaults.ts
  * 对他们不起作用,所以要在读盘时迁移一次。
  * 修订号为 r 的设置对照第 r 张到第 DEFAULTS_REVISION − 1 张表(没有修订号 = 0,对照全部旧表):
- * 修订号可能被不认识它的旧版(1.1.2 及更早)存盘时丢掉,片段库却已经是更新的缺省原文,只对照第 r 张就
- * 永远升不上去。
- * ⚠️下次改 defaults.ts 并发布时:① 把**这一修订号**已发布的缺省原文存进 fixtures,指纹登记到
- * `[DEFAULTS_REVISION]` 这一项(新开一项,别并进旧的);② DEFAULTS_REVISION 加 1。没发布过的中间构建不登记。
+ * 1.1.0 – 1.1.2 不认识修订号,在那里存盘会把它丢掉,片段库却可能已经是更新的缺省原文,只对照第 r 张就
+ * 永远升不上去。(1.0.0 读盘是 {...缺省, ...读到的},存盘原样带着修订号,不会丢。)
+ * 代价(接受):回退到 1.0.0 点「恢复默认」再升级,片段库停在 1.0.0 的恢复缺省 —— 修订号还是 1,不再
+ * 对照第 0 张表。只是缺省没跟上,用户的东西没丢。
+ * ⚠️下次改 defaults.ts 并发布时,步骤见 test/fixtures/default-snippets/README.md:
+ * ① 用 scripts/dump-default-snippets.mjs 从**这一修订号最后发布的 main.js** 取原文和指纹(别用 vitest
+ * 里看到的 DEFAULT_SETTINGS.snippetsSourceText,两者不同,用错了测试照样全绿,老用户却永远升不上去),
+ * 原文存进 fixtures;② 指纹登记到 `[DEFAULTS_REVISION]` 这一项(新开一项,别并进旧的);③ 改
+ * test/settingsModel.test.ts 里钉指纹的那条(released 列表和按修订号的期望);④ DEFAULTS_REVISION 加 1。
+ * 没发布过的中间构建不登记。
  */
 const RELEASED_DEFAULTS_BY_REVISION: FingerprintTables = {
   0: {

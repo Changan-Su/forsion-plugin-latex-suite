@@ -3,7 +3,9 @@
 // 为什么这条值得钉死:defaults.ts 是带正则字面量和函数的 TS 数组,设置面板里编辑的却是文本,
 // 中间靠 serializeRawSnippets 转一道。这一步一旦漂了(比如有人顺手改成 JSON.stringify),
 // 用户点「恢复默认」拿到的会是一份 `{}` 满地的废片段库 —— 而且要等到他真去点才发现。
-import { readFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
@@ -80,6 +82,7 @@ describe('旧版缺省片段库升级到新缺省', () => {
     const edited = [text.slice(0, i) + 'mK' + text.slice(i + 2), `${text}\n`, text.replace(/\n[^\n]*\n/, '\n')]
     for (const e of edited) expect(migrateDefaultSnippets(e, 0)).toBe(e)
   })
+  // 登记新一版时同步改这条(released 列表和按修订号的期望),步骤见 fixtures/default-snippets/README.md。
   it('源码里登记的指纹就是这几份原文的指纹(都登记在修订号 0 下)', () => {
     expect(released.map((n) => textFingerprint(read(n)))).toEqual(['16070:dt9o15zarg', '16070:27f1a4kcj2g', '16123:1tpdwu6y71w'])
     expect(releasedDefaultFingerprints()).toEqual({ 0: released.map((n) => textFingerprint(read(n))) })
@@ -95,6 +98,22 @@ describe('旧版缺省片段库升级到新缺省', () => {
     for (const [saved, rev] of [[null, 0], [{}, 0], [{ snippetsSourceText: 'x' }, 0], [{ [DEFAULTS_REVISION_KEY]: 0 }, 0], [{ [DEFAULTS_REVISION_KEY]: 3 }, 3],
       [{ [DEFAULTS_REVISION_KEY]: '1' }, null], [{ [DEFAULTS_REVISION_KEY]: -1 }, null], [{ [DEFAULTS_REVISION_KEY]: 1.5 }, null], [{ [DEFAULTS_REVISION_KEY]: null }, null]] as const) {
       expect(savedDefaultsRevision(saved)).toBe(rev)
+    }
+  })
+  it('scripts/dump-default-snippets.mjs 取的是打包产物运行时的原文,指纹和源码算法一致', () => {
+    const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
+    const tmp = mkdtempSync(path.join(os.tmpdir(), 'latex-suite-dump-'))
+    try {
+      const file = path.join(tmp, 'default.txt')
+      const printed = execFileSync(process.execPath, ['scripts/dump-default-snippets.mjs', 'main.js', '--out', file], { cwd: root, encoding: 'utf8' })
+      const runtime = readFileSync(file, 'utf8')
+      expect(printed.trim()).toBe(`default  ${textFingerprint(runtime)}`)
+      // 打包产物里的函数体是压缩过的:和 vitest 里的原文不同,登记时只能用这份。
+      expect(runtime).not.toBe(DEFAULT_SETTINGS.snippetsSourceText)
+      const count = (t: string) => parseSnippets(t, DEFAULT_SNIPPET_VARIABLES).snippets.length
+      expect(count(runtime)).toBe(count(DEFAULT_SETTINGS.snippetsSourceText))
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
     }
   })
   it('保存时的修订号:没有写当前;读得懂的取较大的;读不懂的原样写回', () => {
