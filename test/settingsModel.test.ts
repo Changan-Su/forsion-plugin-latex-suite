@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_SETTINGS, mergeSettings, restoreLegacyDefaultSnippets, serializeRawSnippets, splitList, textFingerprint } from '../src/settingsUi/model'
+import { DEFAULT_SETTINGS, DEFAULTS_REVISION, DEFAULTS_REVISION_KEY, mergeSettings, migrateDefaultSnippets, releasedDefaultFingerprints, savedDefaultsRevision, serializeRawSnippets, splitList, textFingerprint } from '../src/settingsUi/model'
 import { DEFAULT_SNIPPETS } from '../src/snippets/defaults'
 import { evalSnippetSource, parseSnippets } from '../src/snippets/parse'
 import { DEFAULT_SNIPPET_VARIABLES } from '../src/snippets/variables'
@@ -66,26 +66,40 @@ describe('默认片段库的文本形态', () => {
 })
 
 // 已发布版本写进用户设置的缺省片段库(各版 main.js 运行时序列化出来的原文,函数体是压缩后的)。
-// 只有逐字等于其中之一才换成新缺省;改过一个字的一律原样。
+// 只有设置里还没有修订号、而且逐字等于其中之一才换成新缺省;改过一个字的一律原样。
 describe('旧版缺省片段库升级到新缺省', () => {
   const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures/default-snippets')
   const released = ['1.0.0.txt', '1.0.0-reset.txt', '1.1.0-1.1.2.txt']
   const read = (name: string) => readFileSync(path.join(dir, name), 'utf8')
   it.each(released)('%s 逐字相同 → 换成新缺省', (name) => {
-    expect(restoreLegacyDefaultSnippets(read(name))).toBe(DEFAULT_SETTINGS.snippetsSourceText)
+    expect(migrateDefaultSnippets(read(name), 0)).toBe(DEFAULT_SETTINGS.snippetsSourceText)
   })
   it.each(released)('%s 改过一个字、多一个换行、删一条 → 原样不动', (name) => {
     const text = read(name)
     const i = text.indexOf('mk')
     const edited = [text.slice(0, i) + 'mK' + text.slice(i + 2), `${text}\n`, text.replace(/\n[^\n]*\n/, '\n')]
-    for (const e of edited) expect(restoreLegacyDefaultSnippets(e)).toBe(e)
+    for (const e of edited) expect(migrateDefaultSnippets(e, 0)).toBe(e)
   })
-  it('源码里登记的指纹就是这几份原文的指纹', () => {
+  it('源码里登记的指纹就是这几份原文的指纹(都登记在修订号 0 下)', () => {
     expect(released.map((n) => textFingerprint(read(n)))).toEqual(['16070:dt9o15zarg', '16070:27f1a4kcj2g', '16123:1tpdwu6y71w'])
+    expect(releasedDefaultFingerprints()).toEqual({ 0: released.map((n) => textFingerprint(read(n))) })
+  })
+  it.each(released)('%s 存过修订号(当前或更新)或修订号认不出 → 原样不动', (name) => {
+    const text = read(name)
+    for (const rev of [DEFAULTS_REVISION, DEFAULTS_REVISION + 1, null]) expect(migrateDefaultSnippets(text, rev)).toBe(text)
+  })
+  it('修订号:没有 = 0,非负整数照读,其余认不出', () => {
+    expect(DEFAULTS_REVISION_KEY).toBe('latexSuiteDefaultsRevision')
+    expect(DEFAULTS_REVISION_KEY in DEFAULT_SETTINGS).toBe(false)
+    expect(mergeSettings({ [DEFAULTS_REVISION_KEY]: 1 })).not.toHaveProperty(DEFAULTS_REVISION_KEY)
+    for (const [saved, rev] of [[null, 0], [{}, 0], [{ snippetsSourceText: 'x' }, 0], [{ [DEFAULTS_REVISION_KEY]: 0 }, 0], [{ [DEFAULTS_REVISION_KEY]: 3 }, 3],
+      [{ [DEFAULTS_REVISION_KEY]: '1' }, null], [{ [DEFAULTS_REVISION_KEY]: -1 }, null], [{ [DEFAULTS_REVISION_KEY]: 1.5 }, null], [{ [DEFAULTS_REVISION_KEY]: null }, null]] as const) {
+      expect(savedDefaultsRevision(saved)).toBe(rev)
+    }
   })
   it('当前缺省、空库、自定义库原样不动', () => {
     for (const t of [DEFAULT_SETTINGS.snippetsSourceText, '[]', '', '[{trigger: "mk", replacement: "$$0$", options: "tA"}]']) {
-      expect(restoreLegacyDefaultSnippets(t)).toBe(t)
+      expect(migrateDefaultSnippets(t, 0)).toBe(t)
     }
   })
   it('新缺省里 dm 三条要求前面是行首或空白', () => {

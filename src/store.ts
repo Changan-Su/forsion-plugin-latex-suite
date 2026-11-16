@@ -1,7 +1,7 @@
 // Settings and snippets share one load/save path. Failed reads never replace a working library.
 import type { PluginContext } from '../types/forsion'
 import type { LatexSuiteSettings } from './settingsUi/model'
-import { DEFAULT_SETTINGS, mergeSettings, restoreLegacyDefaultSnippets } from './settingsUi/model'
+import { DEFAULT_SETTINGS, DEFAULTS_REVISION, DEFAULTS_REVISION_KEY, mergeSettings, migrateDefaultSnippets, savedDefaultsRevision } from './settingsUi/model'
 import { DEFAULT_SNIPPET_VARIABLES } from './snippets/variables'
 import { parseSnippets } from './snippets/parse'
 import { sortSnippets, type Snippet } from './snippets/model'
@@ -99,7 +99,8 @@ export function createStore(ctx: PluginContext): Store {
   }
   const persist = (): void => {
     if (!loaded || disposed || !ctx.saveData) return
-    const snapshot = { ...settings, ...(lastGood ? { latexSuiteLastGood: { ...lastGood } } : {}) }
+    // 修订号只随成功读盘之后的保存写下:从此这份设置里的片段库算用户在这一版里定过的,不再迁移。
+    const snapshot = { ...settings, ...(lastGood ? { latexSuiteLastGood: { ...lastGood } } : {}), [DEFAULTS_REVISION_KEY]: DEFAULTS_REVISION }
     // Serial saves prevent an older slow write from overwriting a newer setting.
     // Disposal stops new work, but writes already accepted from the UI still drain.
     saveQueue = saveQueue.then(async () => {
@@ -149,9 +150,15 @@ export function createStore(ctx: PluginContext): Store {
         if (saved != null && (typeof saved !== 'object' || Array.isArray(saved))) {
           throw new Error('Invalid saved settings')
         }
-        settings = mergeSettings({ ...(saved ?? {}), ...pendingPatch })
-        // 只在读成功之后:逐字等于某个已发布版本缺省库的,换成当前缺省(只改内存,下次保存时随整份设置写回)。
-        settings.snippetsSourceText = restoreLegacyDefaultSnippets(settings.snippetsSourceText)
+        // 只在读成功之后、只迁移读到的那份(加载完成前在设置页里的改动 pendingPatch 原样保留):
+        // 没有修订号的老设置里,逐字等于某个已发布版本缺省库的换成当前缺省。只改内存,下次保存时随整份
+        // 设置和修订号一起写回;写过修订号以后就不再迁移(用户自己改回旧缺省原文也算设过的值)。
+        const revision = savedDefaultsRevision(saved)
+        const fromDisk: Record<string, unknown> = { ...(saved ?? {}) }
+        if (typeof fromDisk.snippetsSourceText === 'string') {
+          fromDisk.snippetsSourceText = migrateDefaultSnippets(fromDisk.snippetsSourceText, revision)
+        }
+        settings = mergeSettings({ ...fromDisk, ...pendingPatch })
         // Backups belong only to embedded user code. External files are always read fresh.
         const backup = saved?.latexSuiteLastGood as Partial<LastGoodLibrary> | undefined
         if (settings.snippetsSource === 'user' && !settings.loadSnippetVariablesFromFile && backup?.version === 1
@@ -160,8 +167,8 @@ export function createStore(ctx: PluginContext): Store {
             const variables = JSON.parse(backup.snippetVariablesSourceText) as unknown
             if (!variables || typeof variables !== 'object' || Array.isArray(variables)
               || Object.values(variables).some((value) => typeof value !== 'string')) throw new Error('Invalid backup variables')
-            // 备份若也是某个已发布版本的缺省库,同样换成新缺省,别让旧缺省从备份里复活。
-            const backupText = restoreLegacyDefaultSnippets(backup.snippetsSourceText)
+            // 备份和主库同一个闸:没有修订号、又逐字是某个已发布版本缺省库的,同样换成新缺省,别让旧缺省从备份里复活。
+            const backupText = migrateDefaultSnippets(backup.snippetsSourceText, revision)
             const recovered = parseSnippets(backupText, { ...DEFAULT_SNIPPET_VARIABLES, ...variables as Record<string, string> })
             if (!recovered.errors.length) {
               active = recovered.snippets

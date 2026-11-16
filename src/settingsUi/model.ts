@@ -222,21 +222,52 @@ export function textFingerprint(text: string): string {
 }
 
 /**
- * 已发布版本写进用户设置的缺省片段库(各版 main.js 运行时序列化出来的原文,函数体是压缩后的)。
- * 插件每次保存都写整份设置,没动过片段库的用户,设置里存的就是当时那一版的缺省原文;只改 defaults.ts
- * 对他们不起作用。原文存在 test/fixtures/default-snippets(单测核对这里的指纹),这里只留长度 + 指纹。
- * ⚠️改 defaults.ts 之前,先把**当前已发布版本**的原文补进去并在这里登记。
+ * 缺省片段库的修订号,存在设置外层的旁路键 DEFAULTS_REVISION_KEY 里(和 latexSuiteLastGood 一样不进
+ * DEFAULT_SETTINGS:mergeSettings 会把「没有」补成当前值,就认不出还没迁移过的老设置了)。
+ * 只在成功读盘之后的保存里写,值是这一版插件的 DEFAULTS_REVISION。
  */
-const RELEASED_DEFAULT_SNIPPETS: Record<string, string> = {
-  '16070:dt9o15zarg': '1.0.0',
-  '16070:27f1a4kcj2g': '1.0.0 reset',
-  '16123:1tpdwu6y71w': '1.1.0 - 1.1.2',
+export const DEFAULTS_REVISION = 1
+export const DEFAULTS_REVISION_KEY = 'latexSuiteDefaultsRevision'
+
+/**
+ * 存的修订号 → 用这个修订号保存时、已发布版本写进用户设置的缺省片段库(长度:指纹 → 版本)。
+ * 0 = 设置里没有修订号(1.0.0 – 1.1.2 写的)。原文取自各版 main.js 运行时序列化出来的文本(函数体是
+ * 压缩后的),存在 test/fixtures/default-snippets,单测核对这里的指纹。
+ * 插件每次保存都写整份设置,没动过片段库的用户,设置里存的就是当时那一版的缺省原文;只改 defaults.ts
+ * 对他们不起作用,所以要在读盘时迁移一次。
+ * ⚠️下次改 defaults.ts 并发布时:① 把**这一修订号**已发布的缺省原文存进 fixtures,指纹登记到
+ * `[DEFAULTS_REVISION]` 这一项(新开一项,别并进 0);② DEFAULTS_REVISION 加 1。没发布过的中间构建不登记。
+ */
+const RELEASED_DEFAULTS_BY_REVISION: Readonly<Record<number, Readonly<Record<string, string>>>> = {
+  0: {
+    '16070:dt9o15zarg': '1.0.0',
+    '16070:27f1a4kcj2g': '1.0.0 reset',
+    '16123:1tpdwu6y71w': '1.1.0 - 1.1.2',
+  },
 }
 
-/** 片段库逐字等于某个已发布版本的缺省库 → 换成当前缺省;用户改过的(哪怕一个字)原样返回。 */
-export function restoreLegacyDefaultSnippets(source: string): string {
-  if (typeof source !== 'string' || source === DEFAULT_SETTINGS.snippetsSourceText) return source
-  return RELEASED_DEFAULT_SNIPPETS[textFingerprint(source)] ? DEFAULT_SETTINGS.snippetsSourceText : source
+/** 读到的设置里的修订号:没有 = 0;有但不是非负整数 = null(认不出,当作不知道,不迁移)。 */
+export function savedDefaultsRevision(saved: unknown): number | null {
+  if (!saved || typeof saved !== 'object') return 0
+  const value = (saved as Record<string, unknown>)[DEFAULTS_REVISION_KEY]
+  if (value === undefined) return 0
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null
+}
+
+/**
+ * 迁移只发生一次:存的修订号已经是当前(或更新)的,或者认不出,原样返回;否则只在逐字等于「存的修订号
+ * 那一版」已发布的缺省原文时换成当前缺省。改过一个字的、以及升级以后自己改回旧缺省原文并保存过的
+ * (那次保存带上了当前修订号),一律原样。
+ */
+export function migrateDefaultSnippets(source: string, revision: number | null): string {
+  if (typeof source !== 'string' || revision === null || revision >= DEFAULTS_REVISION) return source
+  if (source === DEFAULT_SETTINGS.snippetsSourceText) return source
+  return RELEASED_DEFAULTS_BY_REVISION[revision]?.[textFingerprint(source)] ? DEFAULT_SETTINGS.snippetsSourceText : source
+}
+
+/** 登记过的所有指纹(给单测核对 fixtures 用)。 */
+export function releasedDefaultFingerprints(): Record<number, string[]> {
+  return Object.fromEntries(Object.entries(RELEASED_DEFAULTS_BY_REVISION).map(([rev, table]) => [rev, Object.keys(table)]))
 }
 
 /** `"sum, int, frac"` → `['sum', 'int', 'frac']`(上游 strToArray:先去掉**全部**空白再切)。 */

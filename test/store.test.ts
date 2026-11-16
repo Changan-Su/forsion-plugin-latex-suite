@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PluginContext } from '../types/forsion'
 import { createStore, type Store } from '../src/store'
-import type { LatexSuiteSettings } from '../src/settingsUi/model'
+import { DEFAULT_SETTINGS, DEFAULTS_REVISION, DEFAULTS_REVISION_KEY, type LatexSuiteSettings } from '../src/settingsUi/model'
 import { matchSnippet } from '../src/snippets/model'
 
 const source = (trigger: string, replacement = trigger): string => JSON.stringify([{ trigger, replacement, options: 'mA' }])
@@ -203,6 +203,103 @@ describe('released default snippet libraries are upgraded on load', () => {
       expect(store.snippets()).toEqual([])
       expect(h.ctx.saveData).not.toHaveBeenCalled()
     }
+  })
+})
+
+describe('the default library migration happens only once', () => {
+  const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures/default-snippets')
+  const v100 = readFileSync(path.join(dir, '1.0.0.txt'), 'utf8')
+  const v11x = readFileSync(path.join(dir, '1.1.0-1.1.2.txt'), 'utf8')
+  type Saved = Record<string, unknown>
+  const lastSaved = (h: ReturnType<typeof harness>): Saved => JSON.parse(JSON.stringify(h.ctx.saveData.mock.calls.at(-1)![0])) as Saved
+  const boot = async (saved: Saved | null) => {
+    const h = harness(saved as never)
+    const store = h.start()
+    await flush()
+    return { h, store }
+  }
+
+  it('an old 1.0.0 default is migrated once and the next save carries the revision', async () => {
+    const a = await boot({ snippetsSourceText: v100, concealEnabled: true })
+    expect(a.store.settings().snippetsSourceText).toBe(DEFAULT_SETTINGS.snippetsSourceText)
+    expect(a.h.ctx.saveData).not.toHaveBeenCalled()
+    a.store.update({ concealEnabled: false })
+    await flush()
+    const saved = lastSaved(a.h)
+    expect(saved[DEFAULTS_REVISION_KEY]).toBe(DEFAULTS_REVISION)
+    expect(saved.snippetsSourceText).toBe(DEFAULT_SETTINGS.snippetsSourceText)
+    const b = await boot(saved)
+    expect(b.store.settings().snippetsSourceText).toBe(DEFAULT_SETTINGS.snippetsSourceText)
+  })
+
+  it('a library set back to a released default after upgrading stays on restart and on the next save', async () => {
+    for (const old of [v100, v11x]) {
+      const a = await boot({ snippetsSourceText: DEFAULT_SETTINGS.snippetsSourceText })
+      a.store.update({ snippetsSourceText: old })
+      await flush()
+      const s1 = lastSaved(a.h)
+      expect(s1.snippetsSourceText).toBe(old)
+      expect(s1[DEFAULTS_REVISION_KEY]).toBe(DEFAULTS_REVISION)
+      const b = await boot(s1)
+      expect(b.store.settings().snippetsSourceText).toBe(old)
+      b.store.update({ concealEnabled: true })
+      await flush()
+      const s2 = lastSaved(b.h)
+      expect(s2.snippetsSourceText).toBe(old)
+      expect((s2.latexSuiteLastGood as Saved).snippetsSourceText).toBe(old)
+      expect(s2[DEFAULTS_REVISION_KEY]).toBe(DEFAULTS_REVISION)
+    }
+  })
+
+  it('a library or backup saved with a revision is never replaced', async () => {
+    const main = await boot({ snippetsSourceText: v11x, [DEFAULTS_REVISION_KEY]: DEFAULTS_REVISION })
+    expect(main.store.settings().snippetsSourceText).toBe(v11x)
+    const backup = await boot({
+      snippetsSourceText: '[{trigger: "broken"',
+      latexSuiteLastGood: { version: 1, snippetsSourceText: v11x, snippetVariablesSourceText: '{}' },
+      [DEFAULTS_REVISION_KEY]: DEFAULTS_REVISION,
+    })
+    expect(backup.store.snippets().some((s) => s.trigger instanceof RegExp && s.trigger.source.includes('(\\S\\s*)dm'))).toBe(true)
+    backup.store.update({ concealEnabled: true })
+    await flush()
+    const saved = lastSaved(backup.h)
+    expect(saved.snippetsSourceText).toBe('[{trigger: "broken"')
+    expect((saved.latexSuiteLastGood as Saved).snippetsSourceText).toBe(v11x)
+  })
+
+  it('a revision it cannot read counts as unknown: nothing is migrated', async () => {
+    const { store } = await boot({ snippetsSourceText: v11x, [DEFAULTS_REVISION_KEY]: 'x' })
+    expect(store.settings().snippetsSourceText).toBe(v11x)
+  })
+
+  it('edits made before the saved settings arrive are kept as typed, not migrated', async () => {
+    const h = harness()
+    const saved = deferred<Partial<LatexSuiteSettings> | null>()
+    h.ctx.loadData.mockImplementation(() => saved.promise)
+    const store = h.start()
+    store.update({ snippetsSourceText: v11x })
+    saved.resolve({ snippetsSourceText: v100 } as never)
+    await flush()
+    expect(store.settings().snippetsSourceText).toBe(v11x)
+    const written = h.ctx.saveData.mock.calls.at(-1)![0] as Saved
+    expect(written.snippetsSourceText).toBe(v11x)
+    expect(written[DEFAULTS_REVISION_KEY]).toBe(DEFAULTS_REVISION)
+  })
+
+  it('a failed read neither migrates nor writes, and a later successful read still migrates', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const h = harness({ snippetsSourceText: v100 } as never)
+    h.ctx.loadData.mockRejectedValueOnce(new Error('disk unavailable'))
+    const store = h.start()
+    await flush()
+    store.update({ concealEnabled: true })
+    await flush()
+    expect(h.ctx.saveData).not.toHaveBeenCalled()
+    await store.reload()
+    await flush()
+    expect(store.settings().snippetsSourceText).toBe(DEFAULT_SETTINGS.snippetsSourceText)
+    const written = h.ctx.saveData.mock.calls.at(-1)![0] as Saved
+    expect(written).toMatchObject({ concealEnabled: true, snippetsSourceText: DEFAULT_SETTINGS.snippetsSourceText, [DEFAULTS_REVISION_KEY]: DEFAULTS_REVISION })
   })
 })
 
