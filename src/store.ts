@@ -48,10 +48,10 @@ function loadIssue(e: unknown): Issue {
     && (e as { code?: unknown }).code === 'plugin-data-unreadable' && (e as { reason?: unknown }).reason === 'invalid-json')
   return damaged
     ? issue(
-      '已保存的设置已损坏，重新加载也读不出来。自动输入已暂停，改动不会保存，原文件没有动。要从头开始：在桌面端卸载本插件时不勾「保留设置，重装后接着用」（设置会移到回收站），再重新安装。',
+      '已保存的设置已损坏，重新加载也读不出来。自动输入功能已暂停，改动不会保存，原文件没有动。要从头开始：在桌面端卸载本插件时不勾「保留设置，重装后接着用」（设置会移到回收站），再重新安装。',
       'Your saved settings are damaged, so reloading won\'t help. Automatic input is paused and nothing will be saved; the original file is left as it was. To start over, uninstall the plugin on desktop without “Keep settings for a reinstall” (the settings move to the Trash), then install it again.')
     : issue(
-      '这次没能读出已保存的设置。自动输入已暂停，改动不会保存，原来的设置没有动。运行「重新加载 LaTeX 片段」或重启 Forsion 会再读一次。',
+      '这次没能读出已保存的设置。自动输入功能已暂停，改动不会保存，原来的设置没有动。运行「重新加载 LaTeX 片段」或重启 Forsion 会再读一次。',
       'Your saved settings couldn\'t be read this time. Automatic input is paused and nothing will be saved, so your settings are left as they were. Run “Reload LaTeX snippets” or restart Forsion to try again.')
 }
 

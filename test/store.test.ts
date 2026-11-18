@@ -367,7 +367,7 @@ describe('the default library migration happens only once', () => {
       ;(h.ctx as { getLocale: () => string }).getLocale = () => 'zh'
       const [zh] = store.errors()
       expect(en, c.name).not.toMatch(/[\u3400-\u9fff]/)
-      expect(zh, c.name).toMatch(/自动输入已暂停/)
+      expect(zh, c.name).toMatch(/自动输入功能已暂停/)
       if (c.retry) {
         expect(en, c.name).toMatch(/try again/)
         expect(zh, c.name).toMatch(/再读一次/)
