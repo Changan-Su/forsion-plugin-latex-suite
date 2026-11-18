@@ -5,6 +5,7 @@
 ## 1.2.1 — 2026-11-18
 
 - When the saved settings can't be read, the settings page now tells the two cases apart. If they couldn't be read this time, running **Reload LaTeX snippets** or restarting Forsion reads them again. If the settings file is damaged, reloading won't help, so the message explains how to start over: uninstall the plugin on desktop without “Keep settings for a reinstall”, then install it again. In both cases automatic input stays paused, nothing is saved and the original file is left as it was. Before, both said "Reload to retry".
+- While the saved settings can't be read, edits on the settings page no longer take effect. Before, they were merged in and saved once a later read succeeded, and because a whole snippet library edited at that point started from the default library, it replaced your custom library. A notice also appears when the read fails, so you know automatic input has stopped even if you never open the settings page.
 
 ## 1.2.0 — 2026-11-16
 

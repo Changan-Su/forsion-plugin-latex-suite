@@ -73,6 +73,10 @@ export function createStore(ctx: PluginContext): Store {
   let issues: Issue[] = []
   let saveIssue: Issue | null = null
   let pendingPatch: Partial<LatexSuiteSettings> = {}
+  /** 已保存的设置读失败、还没重新读成功:设置页看到的是缺省值,在上面改出来的东西(尤其整段的片段库)
+   *  一旦在重新读成功后合并、保存,就把用户原来那份盖掉。所以这段时间不收改动,提示里「改动不会保存」才是真的。 */
+  let loadFailed = false
+  let loadFailNotified = false
   let lastGood: LastGoodLibrary | null = null
   /** 保存时写的修订号;成功读盘时按读到的定下(见 revisionToSave),读盘成功之前不会写盘。 */
   let savedRevision: unknown = DEFAULTS_REVISION
@@ -202,6 +206,7 @@ export function createStore(ctx: PluginContext): Store {
           } catch { /* Ignore invalid backup metadata; never rewrite the user's draft. */ }
         }
         loaded = true
+        loadFailed = false
         const persistInitializedUpdates = Object.keys(pendingPatch).length > 0
         pendingPatch = {}
         // Once the saved settings are known, enqueue startup edits before any external
@@ -211,6 +216,17 @@ export function createStore(ctx: PluginContext): Store {
         if (!current()) return
         issues = [loadIssue(e)]
         console.error('[latex-suite] settings load failed', e)
+        // 读之前在设置页里攒下的改动同样是在缺省值上改的:丢掉,界面回到缺省值;读成功之前不再收改动(见 update)
+        loadFailed = true
+        pendingPatch = {}
+        hasUserUpdates = false
+        settings = { ...DEFAULT_SETTINGS }
+        // 提示还挂在设置页里;只在编辑器里打字的人看不到那里,所以另外弹一次
+        if (!loadFailNotified) {
+          loadFailNotified = true
+          const text = ctx.getLocale?.() === 'en' ? issues[0].en : issues[0].zh
+          try { ctx.notify?.(text, { level: 'warning', title: 'LaTeX Suite' }) } catch { /* 提示失败不影响暂停 */ }
+        }
         emit()
         return
       }
@@ -301,6 +317,7 @@ export function createStore(ctx: PluginContext): Store {
 
   const update = (patch: Partial<LatexSuiteSettings>): void => {
     if (disposed) return
+    if (loadFailed) { emit(); return }
     hasUserUpdates = true
     const before = settings
     settings = mergeSettings({ ...settings, ...patch })
