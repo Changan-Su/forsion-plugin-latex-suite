@@ -2,6 +2,10 @@
 
 [简体中文](../CHANGELOG.md)
 
+## 1.2.1 — 2026-11-18
+
+- When the saved settings can't be read, the settings page now tells the two cases apart. If they couldn't be read this time, running **Reload LaTeX snippets** or restarting Forsion reads them again. If the settings file is damaged, reloading won't help, so the message explains how to start over: uninstall the plugin on desktop without “Keep settings for a reinstall”, then install it again. In both cases automatic input stays paused, nothing is saved and the original file is left as it was. Before, both said "Reload to retry".
+
 ## 1.2.0 — 2026-11-16
 
 - Placeholder navigation now matches Latex Suite in Obsidian. After the inner snippet of a nested expansion, Tab moves to the next outer placeholder instead of selecting the whole outer content. If you move to a later placeholder with the mouse or arrow keys, Tab continues from there. Navigation ends at the last placeholder, which is no longer highlighted or extended by further typing.

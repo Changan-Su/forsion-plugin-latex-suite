@@ -34,6 +34,27 @@ const SOURCE_KEYS: (keyof LatexSuiteSettings)[] = [
 const normalizePath = (path: string): string => path.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')
 const issue = (zh: string, en: string): Issue => ({ zh, en })
 
+/** 读到的设置不是对象(JSON 合法但形状不对):和文件损坏一样,重新加载也不会好。 */
+class SavedSettingsDamaged extends Error {}
+
+/**
+ * 已保存的设置读不出来时显示的那句。宿主 2026-11-17 起对存过却读不出来的数据 reject,`code` = 'plugin-data-unreadable',
+ * `reason` 分 'read-failed'(一时读不到,再读一次可能就好)和 'invalid-json'(文件已损坏,重新加载也没用)。
+ * 两种都暂停自动输入、不保存;只有前一种该叫用户重试,后一种要说清怎么从头开始。旧宿主读不出来回 null,走不到这里。
+ * 手机端卸载会保留插件数据,所以「卸载时不勾保留设置」这条只在桌面端成立,文案里写明。
+ */
+function loadIssue(e: unknown): Issue {
+  const damaged = e instanceof SavedSettingsDamaged || (!!e && typeof e === 'object'
+    && (e as { code?: unknown }).code === 'plugin-data-unreadable' && (e as { reason?: unknown }).reason === 'invalid-json')
+  return damaged
+    ? issue(
+      '已保存的设置已损坏，重新加载也读不出来。自动输入已暂停，改动不会保存，原文件没有动。要从头开始：在桌面端卸载本插件时不勾「保留设置，重装后接着用」（设置会移到回收站），再重新安装。',
+      'Your saved settings are damaged, so reloading won\'t help. Automatic input is paused and nothing will be saved; the original file is left as it was. To start over, uninstall the plugin on desktop without “Keep settings for a reinstall” (the settings move to the Trash), then install it again.')
+    : issue(
+      '这次没能读出已保存的设置。自动输入已暂停，改动不会保存，原来的设置没有动。运行「重新加载 LaTeX 片段」或重启 Forsion 会再读一次。',
+      'Your saved settings couldn\'t be read this time. Automatic input is paused and nothing will be saved, so your settings are left as they were. Run “Reload LaTeX snippets” or restart Forsion to try again.')
+}
+
 /** The parser's legacy diagnostic strings are translated at the store boundary. */
 function snippetIssue(message: string, path?: string): Issue {
   const syntax = message.match(/^片段库解析失败:(.*)$/s)
@@ -151,7 +172,7 @@ export function createStore(ctx: PluginContext): Store {
         const saved = await ctx.loadData?.<Partial<LatexSuiteSettings> & { latexSuiteLastGood?: unknown }>()
         if (!current()) return
         if (saved != null && (typeof saved !== 'object' || Array.isArray(saved))) {
-          throw new Error('Invalid saved settings')
+          throw new SavedSettingsDamaged('Invalid saved settings')
         }
         // 只在读成功之后、只迁移读到的那份(加载完成前在设置页里的改动 pendingPatch 原样保留):
         // 没有修订号的老设置里,逐字等于某个已发布版本缺省库的换成当前缺省。只改内存,下次保存时随整份
@@ -188,7 +209,7 @@ export function createStore(ctx: PluginContext): Store {
         if (persistInitializedUpdates) persist()
       } catch (e) {
         if (!current()) return
-        issues = [issue('无法读取已保存的设置，自动输入功能已暂停。请重新加载。', 'Saved settings could not be read. Automatic input is paused. Reload to retry.')]
+        issues = [loadIssue(e)]
         console.error('[latex-suite] settings load failed', e)
         emit()
         return

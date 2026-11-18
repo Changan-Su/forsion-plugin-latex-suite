@@ -63,7 +63,7 @@ describe('settings initialization and persistence', () => {
     store.update({ proseSnippetsEnabled: true })
     await flush()
     expect(h.ctx.saveData).not.toHaveBeenCalled()
-    expect(store.errors().join(' ')).toContain('could not be read')
+    expect(store.errors().join(' ')).toContain("couldn't be read this time")
     await store.reload()
     expect(store.ready()).toBe(true)
     expect(store.settings()).toMatchObject({ snippetsEnabled: false, mathPreviewEnabled: true, proseSnippetsEnabled: true })
@@ -315,6 +315,44 @@ describe('the default library migration happens only once', () => {
       const saved = lastSaved(h)
       expect(saved[DEFAULTS_REVISION_KEY]).toEqual(odd)
       expect(saved.snippetsSourceText).toBe(v11x)
+    }
+  })
+
+  it('unreadable saved settings pause input, never save, and say whether reloading can help', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const unreadable = (reason: string) => Object.assign(new Error('plugin-data-unreadable'), { code: 'plugin-data-unreadable', reason })
+    const cases = [
+      { name: 'read-failed', fail: (h: ReturnType<typeof harness>) => h.ctx.loadData.mockRejectedValue(unreadable('read-failed')), retry: true },
+      { name: 'invalid-json', fail: (h: ReturnType<typeof harness>) => h.ctx.loadData.mockRejectedValue(unreadable('invalid-json')), retry: false },
+      { name: 'not an object', fail: (h: ReturnType<typeof harness>) => h.ctx.loadData.mockResolvedValue([] as never), retry: false },
+    ]
+    for (const c of cases) {
+      const h = harness()
+      c.fail(h)
+      const store = h.start()
+      await flush()
+      store.update({ concealEnabled: true })
+      await store.reload()
+      await flush()
+      expect(h.ctx.saveData, c.name).not.toHaveBeenCalled()
+      expect(store.ready(), c.name).toBe(false)
+      expect(store.snippets(), c.name).toEqual([])
+      const [en] = store.errors()
+      ;(h.ctx as { getLocale: () => string }).getLocale = () => 'zh'
+      const [zh] = store.errors()
+      expect(en, c.name).not.toMatch(/[\u3400-\u9fff]/)
+      expect(zh, c.name).toMatch(/自动输入已暂停/)
+      if (c.retry) {
+        expect(en, c.name).toMatch(/try again/)
+        expect(zh, c.name).toMatch(/再读一次/)
+        expect(en, c.name).not.toMatch(/uninstall/i)
+      } else {
+        // Reloading can't fix a damaged file: don't tell the user to reload, tell them how to start over.
+        expect(en, c.name).toMatch(/reloading won't help/)
+        expect(en, c.name).toMatch(/uninstall the plugin on desktop without “Keep settings for a reinstall”/)
+        expect(zh, c.name).toMatch(/重新加载也读不出来/)
+        expect(zh, c.name).toMatch(/不勾「保留设置，重装后接着用」/)
+      }
     }
   })
 
