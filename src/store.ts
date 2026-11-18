@@ -34,6 +34,27 @@ const SOURCE_KEYS: (keyof LatexSuiteSettings)[] = [
 const normalizePath = (path: string): string => path.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')
 const issue = (zh: string, en: string): Issue => ({ zh, en })
 
+/** 读到的设置不是对象(JSON 合法但形状不对):和文件损坏一样,重新加载也不会好。 */
+class SavedSettingsDamaged extends Error {}
+
+/**
+ * 已保存的设置读不出来时显示的那句。宿主 2026-11-17 起对存过却读不出来的数据 reject,`code` = 'plugin-data-unreadable',
+ * `reason` 分 'read-failed'(一时读不到,再读一次可能就好)和 'invalid-json'(文件已损坏,重新加载也没用)。
+ * 两种都暂停自动输入、不保存;只有前一种该叫用户重试,后一种要说清怎么从头开始。旧宿主读不出来回 null,走不到这里。
+ * 手机端卸载会保留插件数据,所以「卸载时不勾保留设置」这条只在桌面端成立,文案里写明。
+ */
+function loadIssue(e: unknown): Issue {
+  const damaged = e instanceof SavedSettingsDamaged || (!!e && typeof e === 'object'
+    && (e as { code?: unknown }).code === 'plugin-data-unreadable' && (e as { reason?: unknown }).reason === 'invalid-json')
+  return damaged
+    ? issue(
+      '已保存的设置已损坏，重新加载也读不出来。自动输入功能已暂停，改动不会保存，原文件没有动。要从头开始：在桌面端卸载本插件时不勾「保留设置，重装后接着用」（设置会移到回收站），再重新安装。',
+      'Your saved settings are damaged, so reloading won\'t help. Automatic input is paused and nothing will be saved; the original file is left as it was. To start over, uninstall the plugin on desktop without “Keep settings for a reinstall” (the settings move to the Trash), then install it again.')
+    : issue(
+      '这次没能读出已保存的设置。自动输入功能已暂停，改动不会保存，原来的设置没有动。运行「重新加载 LaTeX 片段」或重启 Forsion 会再读一次。',
+      'Your saved settings couldn\'t be read this time. Automatic input is paused and nothing will be saved, so your settings are left as they were. Run “Reload LaTeX snippets” or restart Forsion to try again.')
+}
+
 /** The parser's legacy diagnostic strings are translated at the store boundary. */
 function snippetIssue(message: string, path?: string): Issue {
   const syntax = message.match(/^片段库解析失败:(.*)$/s)
@@ -52,6 +73,10 @@ export function createStore(ctx: PluginContext): Store {
   let issues: Issue[] = []
   let saveIssue: Issue | null = null
   let pendingPatch: Partial<LatexSuiteSettings> = {}
+  /** 已保存的设置读失败、还没重新读成功:设置页看到的是缺省值,在上面改出来的东西(尤其整段的片段库)
+   *  一旦在重新读成功后合并、保存,就把用户原来那份盖掉。所以这段时间不收改动,提示里「改动不会保存」才是真的。 */
+  let loadFailed = false
+  let loadFailNotified = false
   let lastGood: LastGoodLibrary | null = null
   /** 保存时写的修订号;成功读盘时按读到的定下(见 revisionToSave),读盘成功之前不会写盘。 */
   let savedRevision: unknown = DEFAULTS_REVISION
@@ -151,7 +176,7 @@ export function createStore(ctx: PluginContext): Store {
         const saved = await ctx.loadData?.<Partial<LatexSuiteSettings> & { latexSuiteLastGood?: unknown }>()
         if (!current()) return
         if (saved != null && (typeof saved !== 'object' || Array.isArray(saved))) {
-          throw new Error('Invalid saved settings')
+          throw new SavedSettingsDamaged('Invalid saved settings')
         }
         // 只在读成功之后、只迁移读到的那份(加载完成前在设置页里的改动 pendingPatch 原样保留):
         // 没有修订号的老设置里,逐字等于某个已发布版本缺省库的换成当前缺省。只改内存,下次保存时随整份
@@ -181,6 +206,7 @@ export function createStore(ctx: PluginContext): Store {
           } catch { /* Ignore invalid backup metadata; never rewrite the user's draft. */ }
         }
         loaded = true
+        loadFailed = false
         const persistInitializedUpdates = Object.keys(pendingPatch).length > 0
         pendingPatch = {}
         // Once the saved settings are known, enqueue startup edits before any external
@@ -188,8 +214,19 @@ export function createStore(ctx: PluginContext): Store {
         if (persistInitializedUpdates) persist()
       } catch (e) {
         if (!current()) return
-        issues = [issue('无法读取已保存的设置，自动输入功能已暂停。请重新加载。', 'Saved settings could not be read. Automatic input is paused. Reload to retry.')]
+        issues = [loadIssue(e)]
         console.error('[latex-suite] settings load failed', e)
+        // 读之前在设置页里攒下的改动同样是在缺省值上改的:丢掉,界面回到缺省值;读成功之前不再收改动(见 update)
+        loadFailed = true
+        pendingPatch = {}
+        hasUserUpdates = false
+        settings = { ...DEFAULT_SETTINGS }
+        // 提示还挂在设置页里;只在编辑器里打字的人看不到那里,所以另外弹一次
+        if (!loadFailNotified) {
+          loadFailNotified = true
+          const text = ctx.getLocale?.() === 'en' ? issues[0].en : issues[0].zh
+          try { ctx.notify?.(text, { level: 'warning', title: 'LaTeX Suite' }) } catch { /* 提示失败不影响暂停 */ }
+        }
         emit()
         return
       }
@@ -280,6 +317,7 @@ export function createStore(ctx: PluginContext): Store {
 
   const update = (patch: Partial<LatexSuiteSettings>): void => {
     if (disposed) return
+    if (loadFailed) { emit(); return }
     hasUserUpdates = true
     const before = settings
     settings = mergeSettings({ ...settings, ...patch })
