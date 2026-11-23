@@ -41,7 +41,7 @@ export const SETTINGS_CSS = `
   --ls-select-bg: var(--overlay-strong, rgba(128, 128, 128, 0.24));
   --ls-field-bg: var(--bg-input, var(--bg-card, var(--background-primary, transparent)));
   --ls-danger: var(--danger, #c8503f);
-  --ls-radius: var(--radius-sm, 8px);
+  --ls-radius: var(--radius-sm);
   --ls-mono: var(--font-mono, ui-monospace, 'SF Mono', Menlo, monospace);
 
   /* 代码高亮色相(亮色)。 */
@@ -86,7 +86,7 @@ export const SETTINGS_CSS = `
   font: inherit;
   font-size: 12px;
   padding: 4px 11px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   cursor: pointer;
   transition: background 0.14s, color 0.14s;
 }
@@ -160,7 +160,7 @@ export const SETTINGS_CSS = `
   height: 20px;
   padding: 0;
   border: 1px solid var(--ls-border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--ls-surface-strong);
   cursor: pointer;
   transition: background 0.16s, border-color 0.16s;

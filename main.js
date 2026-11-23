@@ -336,7 +336,7 @@ $$ \\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix} $$`;f.textContent=e.practice
   --ls-select-bg: var(--overlay-strong, rgba(128, 128, 128, 0.24));
   --ls-field-bg: var(--bg-input, var(--bg-card, var(--background-primary, transparent)));
   --ls-danger: var(--danger, #c8503f);
-  --ls-radius: var(--radius-sm, 8px);
+  --ls-radius: var(--radius-sm);
   --ls-mono: var(--font-mono, ui-monospace, 'SF Mono', Menlo, monospace);
 
   /* \u4EE3\u7801\u9AD8\u4EAE\u8272\u76F8(\u4EAE\u8272)\u3002 */
@@ -381,7 +381,7 @@ $$ \\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix} $$`;f.textContent=e.practice
   font: inherit;
   font-size: 12px;
   padding: 4px 11px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   cursor: pointer;
   transition: background 0.14s, color 0.14s;
 }
@@ -455,7 +455,7 @@ $$ \\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix} $$`;f.textContent=e.practice
   height: 20px;
   padding: 0;
   border: 1px solid var(--ls-border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--ls-surface-strong);
   cursor: pointer;
   transition: background 0.16s, border-color 0.16s;
